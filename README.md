@@ -1,24 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the **AI HR System** frontend — a [Next.js](https://nextjs.org) (App Router) application bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app), using TypeScript (strict mode) and Tailwind CSS.
 
 ## Getting Started
 
 First, run the development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result. You'll be redirected to `/login`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Demo login (local mock data, no backend required yet):** username `admin`, password `Password@123` (see `src/lib/mockUsers.ts` for the other seeded demo accounts and roles).
+
+> Note: Authentication and data (users/projects) currently run against an in-memory/`localStorage` mock (`src/lib/mockUsers.ts`, `src/lib/mockProjects.ts`) so the UI can be developed and demoed before the real backend (see `docs/HR_System_BE.postman_collection.json`) is wired up. This is a temporary scaffold, not a security boundary — do not treat it as production auth.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Project structure
+
+```
+src/
+  app/
+    login/            Public login route
+    (dashboard)/       Authenticated app shell (redirects to /login if not signed in)
+      page.tsx          Dashboard home
+      profile/          Update profile / change password
+      projects/         Project list, create, edit, assignments
+      users/new/        Create user
+  components/          Shared, reusable UI (Sidebar, Breadcrumbs, UserMenu, ConfirmModal, ToastProvider, icons)
+  lib/                 Mock data access + helpers (breadcrumbs, mockUsers, mockProjects)
+  store/               Zustand auth store + client-side hydration helper
+  types/               Shared TypeScript types (auth, project)
+```
+
+## Available scripts
+
+- `npm run dev` — start the local dev server
+- `npm run build` — production build (runs the TypeScript compiler as part of the build)
+- `npm run start` — serve the production build
+- `npm run lint` — run ESLint
 
 ## Learn More
 
