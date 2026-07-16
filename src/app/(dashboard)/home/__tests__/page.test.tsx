@@ -39,14 +39,14 @@ describe("DashboardHomePage (/home)", () => {
     expect(redirect).toHaveBeenCalledWith("/login");
   });
 
-  it("renders a welcome message and role for an authenticated user", async () => {
+  it("renders a greeting message and role for an authenticated user", async () => {
     (getAccessToken as jest.Mock).mockResolvedValue(
       buildToken({ sub: "1", email: "jane@example.com", role: "User", given_name: "Jane" })
     );
 
     render(await DashboardHomePage());
 
-    expect(screen.getByRole("heading", { name: /welcome, jane/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /good morning, jane/i })).toBeInTheDocument();
     expect(screen.getByText("User")).toBeInTheDocument();
     expect(redirect).not.toHaveBeenCalled();
   });
@@ -71,5 +71,63 @@ describe("DashboardHomePage (/home)", () => {
     render(await DashboardHomePage());
 
     expect(screen.getByRole("link", { name: /create user/i })).toBeInTheDocument();
+  });
+
+  it("renders the summary stat cards", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValue(
+      buildToken({ sub: "1", email: "jane@example.com", role: "User", given_name: "Jane" })
+    );
+
+    render(await DashboardHomePage());
+
+    expect(screen.getByText("Total Projects")).toBeInTheDocument();
+    expect(screen.getByText("Hours This Week")).toBeInTheDocument();
+    expect(screen.getByText("Pending Invoices")).toBeInTheDocument();
+    expect(screen.getByText("Active Users")).toBeInTheDocument();
+  });
+
+  it("renders the recent timesheet entries with project, hours, and status", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValue(
+      buildToken({ sub: "1", email: "jane@example.com", role: "User", given_name: "Jane" })
+    );
+
+    render(await DashboardHomePage());
+
+    expect(
+      screen.getByRole("heading", { name: /recent timesheet entries/i })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Project Alpha - Web Platform").length).toBeGreaterThan(0);
+    expect(screen.getByText("6h")).toBeInTheDocument();
+    expect(screen.getAllByText("Approved").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
+  });
+
+  it("renders the recent invoices with number, client, amount, and status", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValue(
+      buildToken({ sub: "1", email: "jane@example.com", role: "User", given_name: "Jane" })
+    );
+
+    render(await DashboardHomePage());
+
+    expect(screen.getByRole("heading", { name: /recent invoices/i })).toBeInTheDocument();
+    expect(screen.getByText("INV-202502-0001")).toBeInTheDocument();
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByText("SGD 8,400.00")).toBeInTheDocument();
+    expect(screen.getByText("Draft")).toBeInTheDocument();
+  });
+
+  it("renders the quick actions as disabled, non-interactive controls", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValue(
+      buildToken({ sub: "1", email: "jane@example.com", role: "User", given_name: "Jane" })
+    );
+
+    render(await DashboardHomePage());
+
+    expect(screen.getByRole("heading", { name: /quick actions/i })).toBeInTheDocument();
+    for (const label of ["Log Time", "View Reports", "Generate Invoice", "Manage Projects"]) {
+      const action = screen.getByRole("button", { name: new RegExp(label, "i") });
+      expect(action).toBeDisabled();
+      expect(action).toHaveAttribute("aria-disabled", "true");
+    }
   });
 });
