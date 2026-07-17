@@ -66,10 +66,17 @@ describe("Sidebar", () => {
   it("renders not-yet-implemented items as disabled, non-navigating controls", () => {
     renderSidebar(projectAdminUser);
 
-    const projectsItem = screen.getByRole("button", { name: /projects/i });
-    expect(projectsItem).toBeDisabled();
-    expect(projectsItem).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("link", { name: /^projects$/i })).not.toBeInTheDocument();
+    const timesheetsItem = screen.getByRole("button", { name: /my timesheets/i });
+    expect(timesheetsItem).toBeDisabled();
+    expect(timesheetsItem).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("link", { name: /^my timesheets$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the implemented Projects item as a real navigation link", () => {
+    renderSidebar(projectAdminUser);
+
+    const projectsLink = screen.getByRole("link", { name: /^projects$/i });
+    expect(projectsLink).toHaveAttribute("href", "/projects");
   });
 
   it("hides the Administration section for a non-SystemAdmin user", () => {
