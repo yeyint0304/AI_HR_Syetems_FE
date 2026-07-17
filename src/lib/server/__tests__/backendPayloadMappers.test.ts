@@ -5,6 +5,7 @@ import {
   toBackendAssignResourcePayload,
   toBackendChangePasswordPayload,
   toBackendCreateProjectPayload,
+  toBackendCreateTimesheetPeriodPayload,
   toBackendCreateUserPayload,
   toBackendLoginPayload,
   toBackendLogoutPayload,
@@ -168,6 +169,18 @@ describe("backendPayloadMappers", () => {
     ).toEqual({
       UserId: "user-guid",
       ResourceRoleTypeId: "role-type-guid",
+    });
+  });
+
+  it("maps a create-timesheet-period payload to PascalCase", () => {
+    expect(
+      toBackendCreateTimesheetPeriodPayload({
+        periodStart: "2026-03-01",
+        periodEnd: "2026-05-15",
+      })
+    ).toEqual({
+      PeriodStart: "2026-03-01",
+      PeriodEnd: "2026-05-15",
     });
   });
 });
