@@ -21,10 +21,11 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * added without touching component logic.
  *
  * `implemented: false` marks destinations from the wireframe that don't have
- * a corresponding route yet in this codebase (Project/Timesheet/Report/
- * Invoice/reference-data modules are out of scope for this design-only
- * change) — the `Sidebar` renders those as disabled, clearly-labelled
- * "coming soon" entries instead of dead links that would 404.
+ * a corresponding route yet in this codebase (Timesheet/Report/Invoice/
+ * reference-data modules are out of scope for the current feature set) — the
+ * `Sidebar` renders those as disabled, clearly-labelled "coming soon" entries
+ * instead of dead links that would 404. `Projects` is implemented (see
+ * `src/app/(dashboard)/projects/*`).
  */
 export interface NavItem {
   label: string;
@@ -49,7 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Timesheet",
     items: [
-      { label: "Projects", href: "/projects", icon: FolderKanban, implemented: false },
+      { label: "Projects", href: "/projects", icon: FolderKanban, implemented: true },
       { label: "My Timesheets", href: "/timesheets", icon: Timer, implemented: false },
       { label: "Timesheet History", href: "/timesheets/history", icon: History, implemented: false },
     ],
@@ -81,9 +82,19 @@ const PAGE_TITLES: Record<string, string> = {
   "/profile": "Profile",
   "/profile/change-password": "Change password",
   "/admin/users/new": "Create user",
+  "/projects": "Projects",
+  "/projects/new": "New project",
 };
+
+/** Matches the dynamic `/projects/[id]/assignments` route. */
+const PROJECT_ASSIGNMENTS_ROUTE_PATTERN = /^\/projects\/[^/]+\/assignments$/;
+/** Matches the dynamic `/projects/[id]` edit route (excludes the static `/projects/new`). */
+const PROJECT_EDIT_ROUTE_PATTERN = /^\/projects\/(?!new$)[^/]+$/;
 
 /** Resolves the current page's breadcrumb label, falling back to "Dashboard". */
 export function getBreadcrumbLabel(pathname: string): string {
-  return PAGE_TITLES[pathname] ?? "Dashboard";
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+  if (PROJECT_ASSIGNMENTS_ROUTE_PATTERN.test(pathname)) return "Project assignments";
+  if (PROJECT_EDIT_ROUTE_PATTERN.test(pathname)) return "Edit project";
+  return "Dashboard";
 }

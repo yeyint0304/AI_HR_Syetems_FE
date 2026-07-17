@@ -2,12 +2,15 @@
  * @jest-environment node
  */
 import {
+  toBackendAssignResourcePayload,
   toBackendChangePasswordPayload,
+  toBackendCreateProjectPayload,
   toBackendCreateUserPayload,
   toBackendLoginPayload,
   toBackendLogoutPayload,
   toBackendRefreshTokenPayload,
   toBackendUpdateProfilePayload,
+  toBackendUpdateProjectPayload,
 } from "@/lib/server/backendPayloadMappers";
 
 describe("backendPayloadMappers", () => {
@@ -110,5 +113,61 @@ describe("backendPayloadMappers", () => {
         CountryId: "country-guid",
       })
     );
+  });
+
+  it("maps a create-project payload to PascalCase, defaulting a missing description to null", () => {
+    expect(
+      toBackendCreateProjectPayload({
+        code: "PRJ-ALPHA",
+        name: "Project Alpha",
+        clientName: "Acme Corp",
+        clientEmail: "client@acme.com",
+        startDate: "2025-01-15",
+        endDate: "2025-12-31",
+        maxDailyHours: 8,
+      })
+    ).toEqual({
+      Code: "PRJ-ALPHA",
+      Name: "Project Alpha",
+      Description: null,
+      ClientName: "Acme Corp",
+      ClientEmail: "client@acme.com",
+      StartDate: "2025-01-15",
+      EndDate: "2025-12-31",
+      MaxDailyHours: 8,
+    });
+  });
+
+  it("maps an update-project payload, additionally including IsActive", () => {
+    expect(
+      toBackendUpdateProjectPayload({
+        code: "PRJ-ALPHA",
+        name: "Project Alpha",
+        description: "Updated description",
+        clientName: "Acme Corp",
+        clientEmail: "client@acme.com",
+        startDate: "2025-01-15",
+        endDate: "2025-12-31",
+        maxDailyHours: 8,
+        isActive: false,
+      })
+    ).toEqual(
+      expect.objectContaining({
+        Description: "Updated description",
+        IsActive: false,
+      })
+    );
+  });
+
+  it("maps an assign-resource payload to PascalCase", () => {
+    expect(
+      toBackendAssignResourcePayload({
+        userId: "user-guid",
+        resourceRoleTypeId: "role-type-guid",
+      })
+    ).toEqual({
+      UserId: "user-guid",
+      ResourceRoleTypeId: "role-type-guid",
+    });
   });
 });

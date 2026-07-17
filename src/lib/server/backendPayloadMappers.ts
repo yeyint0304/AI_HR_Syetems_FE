@@ -5,6 +5,11 @@ import type {
   LoginRequest,
   UpdateProfileRequest,
 } from "@/types/auth.types";
+import type {
+  AssignResourceRequest,
+  CreateProjectRequest,
+  UpdateProjectRequest,
+} from "@/types/project.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -59,5 +64,35 @@ export function toBackendCreateUserPayload(payload: CreateUserRequest) {
     EmployeeId: payload.employeeId || null,
     CountryId: payload.countryId || null,
     RoleId: payload.roleId,
+  };
+}
+
+/** Matches `Project/CreateProject` (no `IsActive` — new projects always start active). */
+export function toBackendCreateProjectPayload(payload: CreateProjectRequest) {
+  return {
+    Code: payload.code,
+    Name: payload.name,
+    Description: payload.description || null,
+    ClientName: payload.clientName,
+    ClientEmail: payload.clientEmail,
+    StartDate: payload.startDate,
+    EndDate: payload.endDate,
+    MaxDailyHours: payload.maxDailyHours,
+  };
+}
+
+/** Matches `Project/UpdateProject`, which additionally accepts `IsActive`. */
+export function toBackendUpdateProjectPayload(payload: UpdateProjectRequest) {
+  return {
+    ...toBackendCreateProjectPayload(payload),
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `Project/AssignResource`. */
+export function toBackendAssignResourcePayload(payload: AssignResourceRequest) {
+  return {
+    UserId: payload.userId,
+    ResourceRoleTypeId: payload.resourceRoleTypeId,
   };
 }
