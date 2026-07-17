@@ -3,15 +3,17 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createProject, isProjectCodeTaken, ProjectInput } from "@/lib/mockProjects";
+import { createProject, mapProjectFieldErrors } from "@/lib/api/projects";
+import { ApiError } from "@/lib/apiClient";
+import { ProjectInput } from "@/types/project";
 import { useToast } from "@/components/ToastProvider";
 import { ChevronLeftIcon } from "@/components/icons";
 
 const initialFormState: ProjectInput = {
   code: "",
   name: "",
-  client: "",
-  status: "Active",
+  clientName: "",
+  isActive: true,
   startDate: "",
   endDate: "",
   description: "",
@@ -26,19 +28,17 @@ export default function NewProjectPage() {
   const [formState, setFormState] = useState<ProjectInput>(initialFormState);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function updateField<K extends keyof ProjectInput>(key: K, value: string) {
+  function updateField<K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) {
     setFormState((prev) => ({ ...prev, [key]: value }));
   }
 
   function validate(): boolean {
     const errors: FieldErrors = {};
     if (!formState.name.trim()) errors.name = "Project name is required.";
-
     if (!formState.code.trim()) errors.code = "Project code is required.";
-    else if (isProjectCodeTaken(formState.code)) errors.code = "This project code is already taken.";
-
-    if (!formState.client.trim()) errors.client = "Client name is required.";
+    if (!formState.clientName.trim()) errors.clientName = "Client name is required.";
     if (!formState.startDate) errors.startDate = "Start date is required.";
     if (!formState.endDate) errors.endDate = "End date is required.";
     else if (formState.startDate && formState.endDate < formState.startDate) {
@@ -49,19 +49,31 @@ export default function NewProjectPage() {
     return Object.keys(errors).length === 0;
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
 
     if (!validate()) return;
 
+    setIsSubmitting(true);
     try {
-      createProject(formState);
+      await createProject(formState);
       showToast("Project created successfully!", "success");
       router.push("/projects");
-    } catch {
-      setFormError("Unable to create project.");
-      showToast("Unable to create project.", "error");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const mapped = mapProjectFieldErrors(error.fieldErrors);
+        if (Object.keys(mapped).length > 0) {
+          setFieldErrors((prev) => ({ ...prev, ...mapped }));
+        }
+        setFormError(error.message);
+        showToast(error.message, "error");
+      } else {
+        setFormError("Unable to create project.");
+        showToast("Unable to create project.", "error");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -118,9 +130,9 @@ export default function NewProjectPage() {
             label="Client name"
             required
             placeholder="e.g. Acme Corp"
-            value={formState.client}
-            onChange={(value) => updateField("client", value)}
-            error={fieldErrors.client}
+            value={formState.clientName}
+            onChange={(value) => updateField("clientName", value)}
+            error={fieldErrors.clientName}
           />
         </div>
 
@@ -151,8 +163,8 @@ export default function NewProjectPage() {
           </label>
           <select
             id="status"
-            value={formState.status}
-            onChange={(event) => updateField("status", event.target.value)}
+            value={formState.isActive ? "Active" : "Inactive"}
+            onChange={(event) => updateField("isActive", event.target.value === "Active")}
             className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/20"
           >
             <option value="Active">Active</option>
@@ -184,9 +196,10 @@ export default function NewProjectPage() {
           </button>
           <button
             type="submit"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            disabled={isSubmitting}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Save project
+            {isSubmitting ? "Saving…" : "Save project"}
           </button>
         </div>
       </form>

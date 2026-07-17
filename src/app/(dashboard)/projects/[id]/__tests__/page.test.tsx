@@ -2,39 +2,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/ToastProvider";
+import { ApiError } from "@/lib/apiClient";
+
+const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "1" }),
   useRouter: () => ({ push: pushMock }),
 }));
 
-const pushMock = vi.fn();
-
-vi.mock("@/lib/mockProjects", () => ({
-  getProject: vi.fn(),
-  isProjectCodeTaken: vi.fn(),
+vi.mock("@/lib/api/projects", () => ({
+  getProjectById: vi.fn(),
   updateProject: vi.fn(),
-  setProjectStatus: vi.fn(),
+  deleteProject: vi.fn(),
+  mapProjectFieldErrors: vi.fn(() => ({})),
 }));
 
-import {
-  getProject,
-  isProjectCodeTaken,
-  setProjectStatus,
-  updateProject,
-} from "@/lib/mockProjects";
+import { deleteProject, getProjectById, updateProject } from "@/lib/api/projects";
 import EditProjectPage from "../page";
 
 const ALPHA_PROJECT = {
   id: "1",
   code: "PRJ-ALPHA",
   name: "Project Alpha",
-  client: "Acme Corp",
-  status: "Active" as const,
+  description: "Core platform revamp for Acme Corp.",
+  clientName: "Acme Corp",
+  clientEmail: null,
   startDate: "2026-01-01",
   endDate: "2026-06-30",
-  description: "Core platform revamp for Acme Corp.",
-  assignedUserIds: ["u-3"],
+  maxDailyHours: null,
+  isActive: true,
 };
 
 function renderPage() {
@@ -48,23 +45,35 @@ function renderPage() {
 describe("EditProjectPage", () => {
   beforeEach(() => {
     pushMock.mockClear();
-    vi.mocked(getProject).mockReset().mockReturnValue(ALPHA_PROJECT);
-    vi.mocked(isProjectCodeTaken).mockReset().mockReturnValue(false);
+    vi.mocked(getProjectById).mockReset().mockResolvedValue(ALPHA_PROJECT);
     vi.mocked(updateProject).mockReset();
-    vi.mocked(setProjectStatus).mockReset();
+    vi.mocked(deleteProject).mockReset().mockResolvedValue(undefined);
   });
 
-  it("shows a not-found state when the project does not exist", () => {
-    vi.mocked(getProject).mockReturnValue(undefined);
+  it("shows a loading state before the project resolves", () => {
     renderPage();
-
-    expect(screen.getByRole("heading", { name: "Project not found" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading project…");
   });
 
-  it("pre-fills the form with the project's current data", () => {
+  it("shows a not-found state when the project does not exist", async () => {
+    vi.mocked(getProjectById).mockRejectedValue(new ApiError("Not found", 404));
     renderPage();
 
-    expect(screen.getByLabelText(/Project name/)).toHaveValue("Project Alpha");
+    expect(await screen.findByRole("heading", { name: "Project not found" })).toBeInTheDocument();
+  });
+
+  it("shows an error state with retry when the request fails", async () => {
+    vi.mocked(getProjectById).mockRejectedValue(new ApiError("Server error", 500));
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Server error");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("pre-fills the form with the project's current data", async () => {
+    renderPage();
+
+    expect(await screen.findByLabelText(/Project name/)).toHaveValue("Project Alpha");
     expect(screen.getByLabelText(/Project code/)).toHaveValue("PRJ-ALPHA");
     expect(screen.getByLabelText(/Client name/)).toHaveValue("Acme Corp");
   });
@@ -72,6 +81,7 @@ describe("EditProjectPage", () => {
   it("validates required fields before submitting", async () => {
     const user = userEvent.setup();
     renderPage();
+    await screen.findByLabelText(/Project name/);
 
     await user.clear(screen.getByLabelText(/Project name/));
     await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -81,9 +91,10 @@ describe("EditProjectPage", () => {
   });
 
   it("saves the updated project and navigates back to the project list", async () => {
-    vi.mocked(updateProject).mockReturnValue({ ...ALPHA_PROJECT, name: "Renamed Project" });
+    vi.mocked(updateProject).mockResolvedValue({ ...ALPHA_PROJECT, name: "Renamed Project" });
     const user = userEvent.setup();
     renderPage();
+    await screen.findByLabelText(/Project name/);
 
     await user.clear(screen.getByLabelText(/Project name/));
     await user.type(screen.getByLabelText(/Project name/), "Renamed Project");
@@ -97,25 +108,19 @@ describe("EditProjectPage", () => {
     expect(pushMock).toHaveBeenCalledWith("/projects");
   });
 
-  it("deactivates the project after confirming in the modal", async () => {
-    vi.mocked(setProjectStatus).mockReturnValue({ ...ALPHA_PROJECT, status: "Inactive" });
+  it("deletes the project after confirming in the modal", async () => {
     const user = userEvent.setup();
     renderPage();
+    await screen.findByLabelText(/Project name/);
 
-    await user.click(screen.getByRole("button", { name: "Deactivate project" }));
+    await user.click(screen.getByRole("button", { name: "Delete Project" }));
 
     const dialog = await screen.findByRole("dialog");
-    await user.click(screen.getByRole("button", { name: "Deactivate" }));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(setProjectStatus).toHaveBeenCalledWith("1", "Inactive");
-    expect(await screen.findByText("Project deactivated successfully!")).toBeInTheDocument();
+    expect(deleteProject).toHaveBeenCalledWith("1");
+    expect(await screen.findByText("Project deleted successfully!")).toBeInTheDocument();
     expect(dialog).not.toBeInTheDocument();
-  });
-
-  it("disables the deactivate button once the project is inactive", () => {
-    vi.mocked(getProject).mockReturnValue({ ...ALPHA_PROJECT, status: "Inactive" });
-    renderPage();
-
-    expect(screen.getByRole("button", { name: "Deactivate project" })).toBeDisabled();
+    expect(pushMock).toHaveBeenCalledWith("/projects");
   });
 });

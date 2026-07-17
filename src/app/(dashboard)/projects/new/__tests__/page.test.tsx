@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/ToastProvider";
+import { ApiError } from "@/lib/apiClient";
 
 const pushMock = vi.fn();
 
@@ -9,12 +10,21 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-vi.mock("@/lib/mockProjects", () => ({
+vi.mock("@/lib/api/projects", () => ({
   createProject: vi.fn(),
-  isProjectCodeTaken: vi.fn(),
+  mapProjectFieldErrors: vi.fn((fieldErrors) => {
+    if (!fieldErrors) return {};
+    const map: Record<string, string> = { Code: "code", ClientName: "clientName" };
+    const result: Record<string, string> = {};
+    for (const [key, messages] of Object.entries(fieldErrors as Record<string, string[]>)) {
+      const mappedKey = map[key];
+      if (mappedKey) result[mappedKey] = messages[0];
+    }
+    return result;
+  }),
 }));
 
-import { createProject, isProjectCodeTaken } from "@/lib/mockProjects";
+import { createProject } from "@/lib/api/projects";
 import NewProjectPage from "../page";
 
 function renderPage() {
@@ -29,7 +39,6 @@ describe("NewProjectPage", () => {
   beforeEach(() => {
     pushMock.mockClear();
     vi.mocked(createProject).mockReset();
-    vi.mocked(isProjectCodeTaken).mockReset().mockReturnValue(false);
   });
 
   it("renders the create project form", () => {
@@ -54,18 +63,6 @@ describe("NewProjectPage", () => {
     expect(createProject).not.toHaveBeenCalled();
   });
 
-  it("shows an error when the project code is already taken", async () => {
-    vi.mocked(isProjectCodeTaken).mockReturnValue(true);
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.type(screen.getByLabelText(/Project code/), "PRJ-ALPHA");
-    await user.click(screen.getByRole("button", { name: "Save project" }));
-
-    expect(await screen.findByText("This project code is already taken.")).toBeInTheDocument();
-    expect(createProject).not.toHaveBeenCalled();
-  });
-
   it("validates that the end date is after the start date", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -84,16 +81,17 @@ describe("NewProjectPage", () => {
   });
 
   it("submits a valid form, shows a success toast, and navigates back to the project list", async () => {
-    vi.mocked(createProject).mockReturnValue({
+    vi.mocked(createProject).mockResolvedValue({
       id: "99",
       code: "PRJ-GAMMA",
       name: "Project Gamma",
-      client: "Initech",
-      status: "Active",
+      description: "",
+      clientName: "Initech",
+      clientEmail: null,
       startDate: "2026-01-01",
       endDate: "2026-06-01",
-      description: "",
-      assignedUserIds: [],
+      maxDailyHours: null,
+      isActive: true,
     });
 
     const user = userEvent.setup();
@@ -107,16 +105,36 @@ describe("NewProjectPage", () => {
     await user.click(screen.getByRole("button", { name: "Save project" }));
 
     expect(createProject).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Project Gamma", code: "PRJ-GAMMA", client: "Initech" }),
+      expect.objectContaining({ name: "Project Gamma", code: "PRJ-GAMMA", clientName: "Initech" }),
     );
     expect(await screen.findByText("Project created successfully!")).toBeInTheDocument();
     expect(pushMock).toHaveBeenCalledWith("/projects");
   });
 
-  it("shows an error toast when createProject throws", async () => {
-    vi.mocked(createProject).mockImplementation(() => {
-      throw new Error("boom");
-    });
+  it("shows the backend's error message and field errors when createProject rejects with an ApiError", async () => {
+    vi.mocked(createProject).mockRejectedValue(
+      new ApiError("This project code is already taken.", 400, {
+        Code: ["This project code is already taken."],
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/Project name/), "Project Gamma");
+    await user.type(screen.getByLabelText(/Project code/), "PRJ-ALPHA");
+    await user.type(screen.getByLabelText(/Client name/), "Initech");
+    await user.type(screen.getByLabelText(/Start date/), "2026-01-01");
+    await user.type(screen.getByLabelText(/End date/), "2026-06-01");
+    await user.click(screen.getByRole("button", { name: "Save project" }));
+
+    const errorMessages = await screen.findAllByText("This project code is already taken.");
+    expect(errorMessages.length).toBeGreaterThan(0);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic error toast when createProject throws a non-ApiError", async () => {
+    vi.mocked(createProject).mockRejectedValue(new Error("boom"));
 
     const user = userEvent.setup();
     renderPage();
