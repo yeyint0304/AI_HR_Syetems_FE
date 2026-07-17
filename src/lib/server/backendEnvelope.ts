@@ -1,4 +1,5 @@
 import "server-only";
+import { logger } from "@/lib/utils/logger";
 
 /**
  * Shared helper for unwrapping the .NET backend's standard response envelope:
@@ -50,4 +51,43 @@ export function readBackendEnvelope(raw: unknown): BackendEnvelope {
     }
   }
   return { isSuccess: true, statusCode: 200, data: raw };
+}
+
+/**
+ * Clamps a backend-supplied status code to a valid HTTP *error* range
+ * (400–599), falling back to `fallback` when the value is missing,
+ * non-integer, or out of range (e.g. `StatusCode: 0`). `NextResponse.json`
+ * throws a `RangeError` for anything outside 100–599, so this guards Route
+ * Handlers against a malformed/unexpected backend envelope taking down the
+ * response entirely.
+ */
+export function toHttpStatus(code: number, fallback: number): number {
+  return Number.isInteger(code) && code >= 400 && code <= 599 ? code : fallback;
+}
+
+/**
+ * Builds a safe `{ status, message }` pair for an envelope-based *logical*
+ * failure (`IsSuccess: false`), applying the same trust-boundary discipline
+ * as `normalizeBackendError` (used for thrown/transport-level errors): the
+ * backend's raw `Message` is only forwarded to the client for expected 4xx
+ * business errors. For a logical failure carrying a 5xx `StatusCode` (still
+ * HTTP 200 on the wire), the real message is logged server-side only and a
+ * generic fallback is returned instead — otherwise backend-internal details
+ * could leak straight to the browser (OWASP A05 / A09).
+ *
+ * Use this anywhere `readBackendEnvelope`'s `!envelope.isSuccess` branch is
+ * turned into a client-facing `NextResponse.json` (GET/POST/PUT/DELETE
+ * Route Handlers for projects and timesheet periods).
+ */
+export function resolveEnvelopeFailure(
+  envelope: BackendEnvelope,
+  fallbackMessage: string,
+  fallbackStatus = 400
+): { status: number; message: string } {
+  const status = toHttpStatus(envelope.statusCode, fallbackStatus);
+  if (status >= 500) {
+    logger.error("Backend reported a logical failure", { status, message: envelope.message });
+    return { status, message: fallbackMessage };
+  }
+  return { status, message: envelope.message ?? fallbackMessage };
 }

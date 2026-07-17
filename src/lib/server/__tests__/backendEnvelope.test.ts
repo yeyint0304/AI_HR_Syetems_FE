@@ -1,7 +1,12 @@
 /**
  * @jest-environment node
  */
-import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
+import { readBackendEnvelope, resolveEnvelopeFailure, toHttpStatus } from "@/lib/server/backendEnvelope";
+import { logger } from "@/lib/utils/logger";
+
+jest.mock("@/lib/utils/logger", () => ({
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
+}));
 
 describe("readBackendEnvelope", () => {
   it("reads a successful single-object envelope (per the saved Auth/Login example)", () => {
@@ -70,5 +75,72 @@ describe("readBackendEnvelope", () => {
       statusCode: 200,
       data: undefined,
     });
+  });
+});
+
+describe("toHttpStatus", () => {
+  it("passes through a valid 4xx/5xx integer status code", () => {
+    expect(toHttpStatus(404, 400)).toBe(404);
+    expect(toHttpStatus(500, 400)).toBe(500);
+    expect(toHttpStatus(599, 400)).toBe(599);
+  });
+
+  it("falls back for out-of-range, non-integer, or missing status codes", () => {
+    expect(toHttpStatus(0, 400)).toBe(400);
+    expect(toHttpStatus(200, 400)).toBe(400);
+    expect(toHttpStatus(600, 400)).toBe(400);
+    expect(toHttpStatus(1.5, 400)).toBe(400);
+    expect(toHttpStatus(Number.NaN, 400)).toBe(400);
+  });
+});
+
+describe("resolveEnvelopeFailure", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("forwards the backend's message for an expected 4xx logical failure", () => {
+    const result = resolveEnvelopeFailure(
+      { isSuccess: false, statusCode: 404, message: "Project not found.", data: null },
+      "Project not found.",
+      404
+    );
+
+    expect(result).toEqual({ status: 404, message: "Project not found." });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("uses the fallback status when the envelope's statusCode is not a valid HTTP error code", () => {
+    const result = resolveEnvelopeFailure(
+      { isSuccess: false, statusCode: 0, message: "Odd backend message", data: null },
+      "Unable to load the resource.",
+      400
+    );
+
+    expect(result).toEqual({ status: 400, message: "Odd backend message" });
+  });
+
+  it("hides the backend's raw message and logs server-side for a 5xx logical failure (finding #1)", () => {
+    const result = resolveEnvelopeFailure(
+      { isSuccess: false, statusCode: 500, message: "NullReferenceException at Foo.Bar", data: null },
+      "Project not found.",
+      404
+    );
+
+    expect(result).toEqual({ status: 500, message: "Project not found." });
+    expect(logger.error).toHaveBeenCalledWith(
+      "Backend reported a logical failure",
+      expect.objectContaining({ status: 500 })
+    );
+  });
+
+  it("falls back to the generic message when the envelope has no message", () => {
+    const result = resolveEnvelopeFailure(
+      { isSuccess: false, statusCode: 404, data: null },
+      "Project not found.",
+      404
+    );
+
+    expect(result).toEqual({ status: 404, message: "Project not found." });
   });
 });

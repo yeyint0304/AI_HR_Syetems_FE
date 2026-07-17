@@ -7,6 +7,7 @@ import {
   mapBackendTimesheetPeriod,
   mapBackendTimesheetPeriodList,
   readBackendEnvelope,
+  resolveEnvelopeFailure,
 } from "@/lib/server/timesheetPeriodResponseMappers";
 import {
   createTimesheetPeriodSchema,
@@ -56,10 +57,12 @@ export async function GET(request: Request) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Unable to load timesheet periods." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 502 }
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to load timesheet periods.",
+        502
       );
+      return NextResponse.json({ message }, { status });
     }
 
     return NextResponse.json(
@@ -135,10 +138,12 @@ export async function POST(request: Request) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Unable to create the timesheet period." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 400 }
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to create the timesheet period.",
+        400
       );
+      return NextResponse.json({ message }, { status });
     }
 
     const period = mapBackendTimesheetPeriod(envelope.data);

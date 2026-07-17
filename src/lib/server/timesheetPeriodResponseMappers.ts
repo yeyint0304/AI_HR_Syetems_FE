@@ -1,6 +1,6 @@
 import "server-only";
 import type { TimesheetPeriod } from "@/types/timesheetPeriod.types";
-import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
+import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
 
 /**
@@ -23,7 +23,7 @@ import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
  * translate it into a proper HTTP error response for the client.
  */
 
-export { readBackendEnvelope };
+export { readBackendEnvelope, resolveEnvelopeFailure };
 export type { BackendEnvelope };
 
 function extractArray(raw: unknown): unknown[] {

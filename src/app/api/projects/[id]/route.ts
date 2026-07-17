@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
-import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
+import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import { toBackendUpdateProjectPayload } from "@/lib/server/backendPayloadMappers";
 import { mapBackendProject } from "@/lib/server/projectResponseMappers";
 import { updateProjectSchema } from "@/lib/validators/project.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageProjects } from "@/lib/constants/project.constants";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -41,10 +42,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Project not found." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 404 }
-      );
+      const { status, message } = resolveEnvelopeFailure(envelope, "Project not found.", 404);
+      return NextResponse.json({ message }, { status });
     }
 
     const project = mapBackendProject(envelope.data);
@@ -115,7 +114,29 @@ export async function PUT(request: Request, { params }: RouteParams) {
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    return NextResponse.json({ data: mapBackendProject(response.data) ?? response.data }, { status: 200 });
+    const envelope = readBackendEnvelope(response.data);
+    if (!envelope.isSuccess) {
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to update the project. Please try again.",
+        400
+      );
+      return NextResponse.json({ message }, { status });
+    }
+
+    const project = mapBackendProject(envelope.data);
+    if (!project) {
+      // Never forward the raw (potentially PascalCase/internal-shaped)
+      // backend payload to the client when mapping fails — return a safe,
+      // generic error instead (see Security Report finding #4).
+      logger.error("Unable to map backend project response after update", { id });
+      return NextResponse.json(
+        { message: "Unable to update the project. Please try again." },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ data: project }, { status: 200 });
   } catch (error) {
     const { status, message } = normalizeBackendError(
       error,

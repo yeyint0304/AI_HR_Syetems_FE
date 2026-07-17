@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
-import { mapBackendTimesheetPeriod, readBackendEnvelope } from "@/lib/server/timesheetPeriodResponseMappers";
+import {
+  mapBackendTimesheetPeriod,
+  readBackendEnvelope,
+  resolveEnvelopeFailure,
+} from "@/lib/server/timesheetPeriodResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageTimesheetPeriods } from "@/lib/constants/timesheetPeriod.constants";
 
@@ -36,10 +40,12 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Timesheet period not found." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 404 }
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Timesheet period not found.",
+        404
       );
+      return NextResponse.json({ message }, { status });
     }
 
     const period = mapBackendTimesheetPeriod(envelope.data);
@@ -92,10 +98,12 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Unable to delete the timesheet period." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 400 }
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to delete the timesheet period.",
+        400
       );
+      return NextResponse.json({ message }, { status });
     }
 
     return new NextResponse(null, { status: 204 });

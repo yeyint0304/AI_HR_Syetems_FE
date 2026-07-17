@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
-import { readBackendEnvelope } from "@/lib/server/timesheetPeriodResponseMappers";
+import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/timesheetPeriodResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageTimesheetPeriods } from "@/lib/constants/timesheetPeriod.constants";
 
@@ -53,10 +53,12 @@ export async function PUT(_request: Request, { params }: RouteParams) {
 
     const envelope = readBackendEnvelope(response.data);
     if (!envelope.isSuccess) {
-      return NextResponse.json(
-        { message: envelope.message ?? "Unable to lock the timesheet period." },
-        { status: envelope.statusCode >= 400 ? envelope.statusCode : 400 }
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to lock the timesheet period.",
+        400
       );
+      return NextResponse.json({ message }, { status });
     }
 
     return NextResponse.json({ message: envelope.message ?? "Period locked." }, { status: 200 });
