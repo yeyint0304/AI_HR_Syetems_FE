@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
+import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
 import { toBackendUpdateProjectPayload } from "@/lib/server/backendPayloadMappers";
 import { mapBackendProject } from "@/lib/server/projectResponseMappers";
 import { updateProjectSchema } from "@/lib/validators/project.validators";
@@ -12,7 +13,17 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-/** GET /api/projects/[id] — any authenticated user may view a single project (see `GET /api/projects`). */
+/**
+ * GET /api/projects/[id] — any authenticated user may view a single project (see `GET /api/projects`).
+ *
+ * `Project/GetProject/{id}` wraps its payload in the standard backend
+ * envelope (`{ StatusCode, IsSuccess, Message, Data }`, confirmed by the
+ * saved example in `docs/HR_System_BE.postman_collection.json`), and — like
+ * `TimesheetPeriod/GetTimesheetPeriodById` — may signal a logical failure
+ * (e.g. "not found") with `IsSuccess: false` at HTTP 200, which axios would
+ * not treat as a thrown error. The envelope is inspected explicitly so that
+ * case surfaces as a proper error response instead of a false-positive 200.
+ */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   const accessToken = await getAccessToken();
@@ -28,7 +39,15 @@ export async function GET(_request: Request, { params }: RouteParams) {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    const project = mapBackendProject(response.data);
+    const envelope = readBackendEnvelope(response.data);
+    if (!envelope.isSuccess) {
+      return NextResponse.json(
+        { message: envelope.message ?? "Project not found." },
+        { status: envelope.statusCode >= 400 ? envelope.statusCode : 404 }
+      );
+    }
+
+    const project = mapBackendProject(envelope.data);
     if (!project) {
       return NextResponse.json({ message: "Project not found." }, { status: 404 });
     }

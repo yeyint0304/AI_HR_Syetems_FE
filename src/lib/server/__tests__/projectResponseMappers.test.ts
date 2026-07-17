@@ -63,6 +63,45 @@ describe("projectResponseMappers", () => {
       expect(mapBackendProject(null)).toBeNull();
       expect(mapBackendProject("not-an-object")).toBeNull();
     });
+
+    it("unwraps the real backend's Data envelope (per the saved Project/GetProject example)", () => {
+      expect(
+        mapBackendProject({
+          StatusCode: 200,
+          IsSuccess: true,
+          Message: "Success",
+          Data: {
+            Id: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+            Code: "PRJ-001",
+            Name: "Project Helix",
+            Description: "Straight Through Processing",
+            ClientName: "Tokio Marine",
+            ClientEmail: "lin.htoo@tokiomarine-life.sg",
+            StartDate: "2025-01-01",
+            EndDate: "2025-12-31",
+            MaxDailyHours: 20,
+            IsActive: true,
+          },
+        })
+      ).toEqual({
+        id: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+        code: "PRJ-001",
+        name: "Project Helix",
+        description: "Straight Through Processing",
+        clientName: "Tokio Marine",
+        clientEmail: "lin.htoo@tokiomarine-life.sg",
+        startDate: "2025-01-01",
+        endDate: "2025-12-31",
+        maxDailyHours: 20,
+        isActive: true,
+      });
+    });
+
+    it("returns null when the envelope reports a logical failure (IsSuccess: false)", () => {
+      expect(
+        mapBackendProject({ StatusCode: 404, IsSuccess: false, Message: "Not found.", Data: null })
+      ).toBeNull();
+    });
   });
 
   describe("mapBackendProjectList", () => {
@@ -113,6 +152,28 @@ describe("projectResponseMappers", () => {
     it("returns null when required fields are missing", () => {
       expect(mapBackendAssignment({ Id: "a1" })).toBeNull();
     });
+
+    it("unwraps the real backend's Data envelope (per the saved Project/AssignResource example)", () => {
+      expect(
+        mapBackendAssignment({
+          StatusCode: 200,
+          IsSuccess: true,
+          Message: "Success",
+          Data: {
+            Id: "12565026-b4b4-45d8-a7db-5d0537cf66ab",
+            ProjectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+            UserId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+            ResourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+          },
+        })
+      ).toEqual(
+        expect.objectContaining({
+          id: "12565026-b4b4-45d8-a7db-5d0537cf66ab",
+          userId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+          resourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+        })
+      );
+    });
   });
 
   describe("mapBackendAssignmentList", () => {
@@ -133,6 +194,17 @@ describe("projectResponseMappers", () => {
 
     it("returns null when required fields are missing", () => {
       expect(mapBackendResourceRoleType({})).toBeNull();
+    });
+
+    it("unwraps the real backend's Data envelope", () => {
+      expect(
+        mapBackendResourceRoleType({
+          StatusCode: 200,
+          IsSuccess: true,
+          Message: "Success",
+          Data: { Id: "r1", Name: "Senior Developer" },
+        })
+      ).toEqual({ id: "r1", name: "Senior Developer", description: null });
     });
   });
 
