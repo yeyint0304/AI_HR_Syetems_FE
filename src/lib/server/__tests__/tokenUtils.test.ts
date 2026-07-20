@@ -30,6 +30,41 @@ describe("extractTokens", () => {
     expect(extractTokens("not an object")).toBeNull();
     expect(extractTokens(undefined)).toBeNull();
   });
+
+  it("extracts tokens nested under the real backend's Data envelope (per the saved Auth/Login example)", () => {
+    expect(
+      extractTokens({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          AccessToken: "access-envelope",
+          RefreshToken: "refresh-envelope",
+          ExpiresAt: "2026-08-06T11:15:48.0766717Z",
+          UserId: "00000000-0000-0000-0000-000000000001",
+          Username: "admin",
+          Email: "admin@hrsystem.com",
+          FirstName: "System",
+          LastName: "Admin",
+          Roles: ["SystemAdmin"],
+        },
+      })
+    ).toEqual({
+      accessToken: "access-envelope",
+      refreshToken: "refresh-envelope",
+    });
+  });
+
+  it("returns null when the backend envelope reports a logical failure (IsSuccess: false)", () => {
+    expect(
+      extractTokens({
+        StatusCode: 401,
+        IsSuccess: false,
+        Message: "Invalid username/email or password.",
+        Data: null,
+      })
+    ).toBeNull();
+  });
 });
 
 describe("computeAccessTokenMaxAge", () => {

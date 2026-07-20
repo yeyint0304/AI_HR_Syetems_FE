@@ -2,17 +2,29 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
+import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import { toBackendUpdateProjectPayload } from "@/lib/server/backendPayloadMappers";
 import { mapBackendProject } from "@/lib/server/projectResponseMappers";
 import { updateProjectSchema } from "@/lib/validators/project.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageProjects } from "@/lib/constants/project.constants";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-/** GET /api/projects/[id] — any authenticated user may view a single project (see `GET /api/projects`). */
+/**
+ * GET /api/projects/[id] — any authenticated user may view a single project (see `GET /api/projects`).
+ *
+ * `Project/GetProject/{id}` wraps its payload in the standard backend
+ * envelope (`{ StatusCode, IsSuccess, Message, Data }`, confirmed by the
+ * saved example in `docs/HR_System_BE.postman_collection.json`), and — like
+ * `TimesheetPeriod/GetTimesheetPeriodById` — may signal a logical failure
+ * (e.g. "not found") with `IsSuccess: false` at HTTP 200, which axios would
+ * not treat as a thrown error. The envelope is inspected explicitly so that
+ * case surfaces as a proper error response instead of a false-positive 200.
+ */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   const accessToken = await getAccessToken();
@@ -28,7 +40,13 @@ export async function GET(_request: Request, { params }: RouteParams) {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    const project = mapBackendProject(response.data);
+    const envelope = readBackendEnvelope(response.data);
+    if (!envelope.isSuccess) {
+      const { status, message } = resolveEnvelopeFailure(envelope, "Project not found.", 404);
+      return NextResponse.json({ message }, { status });
+    }
+
+    const project = mapBackendProject(envelope.data);
     if (!project) {
       return NextResponse.json({ message: "Project not found." }, { status: 404 });
     }
@@ -96,7 +114,29 @@ export async function PUT(request: Request, { params }: RouteParams) {
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    return NextResponse.json({ data: mapBackendProject(response.data) ?? response.data }, { status: 200 });
+    const envelope = readBackendEnvelope(response.data);
+    if (!envelope.isSuccess) {
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to update the project. Please try again.",
+        400
+      );
+      return NextResponse.json({ message }, { status });
+    }
+
+    const project = mapBackendProject(envelope.data);
+    if (!project) {
+      // Never forward the raw (potentially PascalCase/internal-shaped)
+      // backend payload to the client when mapping fails — return a safe,
+      // generic error instead (see Security Report finding #4).
+      logger.error("Unable to map backend project response after update", { id });
+      return NextResponse.json(
+        { message: "Unable to update the project. Please try again." },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ data: project }, { status: 200 });
   } catch (error) {
     const { status, message } = normalizeBackendError(
       error,

@@ -10,6 +10,7 @@ import type {
   CreateProjectRequest,
   UpdateProjectRequest,
 } from "@/types/project.types";
+import type { CreateTimesheetPeriodRequest } from "@/types/timesheetPeriod.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -94,5 +95,13 @@ export function toBackendAssignResourcePayload(payload: AssignResourceRequest) {
   return {
     UserId: payload.userId,
     ResourceRoleTypeId: payload.resourceRoleTypeId,
+  };
+}
+
+/** Matches `TimesheetPeriod/CreateTimesheetPeriod` (dates are sent as `YYYY-MM-DD` strings). */
+export function toBackendCreateTimesheetPeriodPayload(payload: CreateTimesheetPeriodRequest) {
+  return {
+    PeriodStart: payload.periodStart,
+    PeriodEnd: payload.periodEnd,
   };
 }

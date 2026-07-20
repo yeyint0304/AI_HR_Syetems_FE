@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   BarChart3,
+  CalendarRange,
   Coins,
   CreditCard,
   FolderKanban,
@@ -21,11 +22,12 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * added without touching component logic.
  *
  * `implemented: false` marks destinations from the wireframe that don't have
- * a corresponding route yet in this codebase (Timesheet/Report/Invoice/
- * reference-data modules are out of scope for the current feature set) — the
- * `Sidebar` renders those as disabled, clearly-labelled "coming soon" entries
- * instead of dead links that would 404. `Projects` is implemented (see
- * `src/app/(dashboard)/projects/*`).
+ * a corresponding route yet in this codebase (Report/Invoice/reference-data
+ * modules are out of scope for the current feature set) — the `Sidebar`
+ * renders those as disabled, clearly-labelled "coming soon" entries instead
+ * of dead links that would 404. `Projects` and `Timesheet Periods` are
+ * implemented (see `src/app/(dashboard)/projects/*` and
+ * `src/app/(dashboard)/timesheet-periods/*`).
  */
 export interface NavItem {
   label: string;
@@ -51,6 +53,12 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Timesheet",
     items: [
       { label: "Projects", href: "/projects", icon: FolderKanban, implemented: true },
+      {
+        label: "Timesheet Periods",
+        href: "/timesheet-periods",
+        icon: CalendarRange,
+        implemented: true,
+      },
       { label: "My Timesheets", href: "/timesheets", icon: Timer, implemented: false },
       { label: "Timesheet History", href: "/timesheets/history", icon: History, implemented: false },
     ],
@@ -84,6 +92,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/admin/users/new": "Create user",
   "/projects": "Projects",
   "/projects/new": "New project",
+  "/timesheet-periods": "Timesheet Periods",
+  "/timesheet-periods/new": "New timesheet period",
 };
 
 /** Matches the dynamic `/projects/[id]/assignments` route. */

@@ -1,16 +1,26 @@
 import "server-only";
 import type { Project, ProjectAssignment, ResourceRoleType } from "@/types/project.types";
+import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
 
 /**
  * Normalizes the .NET backend's Project/Assignment/ResourceRoleType response
- * shapes into the camelCase DTOs this app renders. Neither the exact field
- * casing nor the list-wrapper shape has been verified against a live payload
- * in this environment — `docs/HR_System_BE.postman_collection.json` has no
- * saved example responses — so both PascalCase and camelCase field names,
- * and several common list-wrapper shapes, are checked defensively, mirroring
- * the existing `lib/server/tokenUtils.ts#extractTokens` and
- * `lib/server/normalizeBackendError.ts` conventions. Adjust the `Raw*`
- * interfaces below once a real payload from the .NET backend is available.
+ * shapes into the camelCase DTOs this app renders.
+ *
+ * Per the saved "200 - Success" examples for `Project/GetProject`,
+ * `Project/AssignResource`, etc. in
+ * `docs/HR_System_BE.postman_collection.json`, single-object responses are
+ * wrapped in the standard envelope (`{ StatusCode, IsSuccess, Message, Data:
+ * {...} }`) — the same envelope `lib/server/timesheetPeriodResponseMappers.ts`
+ * already accounted for. The single-object mappers below
+ * (`mapBackendProject`/`mapBackendAssignment`/`mapBackendResourceRoleType`)
+ * previously read fields from the *top level* of the response only, so they
+ * always returned `null` for real backend responses (the actual fields being
+ * one level deeper, under `Data`) — this made `GET /api/projects/[id]`
+ * respond as if the project didn't exist / fail upstream. They now unwrap
+ * that envelope via `readBackendEnvelope` first. List responses were
+ * already unaffected: `extractArray` below already checks for an array under
+ * `Data`/`data`. Both PascalCase and camelCase field names are still checked
+ * defensively for forward-compatibility.
  */
 
 function extractArray(raw: unknown): unknown[] {
@@ -49,10 +59,13 @@ interface RawProject {
   isActive?: boolean;
 }
 
-/** Maps a single backend Project object. Returns `null` if the minimum required fields are missing. */
+/** Maps a single backend Project object (tolerates being passed either the raw envelope or an already-unwrapped object). Returns `null` if the minimum required fields are missing. */
 export function mapBackendProject(raw: unknown): Project | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const r = raw as RawProject;
+  const envelope = readBackendEnvelope(raw);
+  if (!envelope.isSuccess) return null;
+  const unwrapped = envelope.data;
+  if (typeof unwrapped !== "object" || unwrapped === null) return null;
+  const r = unwrapped as RawProject;
   const id = r.Id ?? r.id;
   const code = r.Code ?? r.code;
   const name = r.Name ?? r.name;
@@ -101,10 +114,13 @@ interface RawAssignment {
   roleName?: string;
 }
 
-/** Maps a single backend resource-assignment object. Returns `null` if the minimum required fields are missing. */
+/** Maps a single backend resource-assignment object (tolerates being passed either the raw envelope or an already-unwrapped object). Returns `null` if the minimum required fields are missing. */
 export function mapBackendAssignment(raw: unknown): ProjectAssignment | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const r = raw as RawAssignment;
+  const envelope = readBackendEnvelope(raw);
+  if (!envelope.isSuccess) return null;
+  const unwrapped = envelope.data;
+  if (typeof unwrapped !== "object" || unwrapped === null) return null;
+  const r = unwrapped as RawAssignment;
   const id = r.Id ?? r.id ?? r.AssignmentId ?? r.assignmentId;
   const userId = r.UserId ?? r.userId;
   const resourceRoleTypeId = r.ResourceRoleTypeId ?? r.resourceRoleTypeId;
@@ -135,10 +151,13 @@ interface RawResourceRoleType {
   description?: string | null;
 }
 
-/** Maps a single backend ResourceRoleType object. Returns `null` if the minimum required fields are missing. */
+/** Maps a single backend ResourceRoleType object (tolerates being passed either the raw envelope or an already-unwrapped object). Returns `null` if the minimum required fields are missing. */
 export function mapBackendResourceRoleType(raw: unknown): ResourceRoleType | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const r = raw as RawResourceRoleType;
+  const envelope = readBackendEnvelope(raw);
+  if (!envelope.isSuccess) return null;
+  const unwrapped = envelope.data;
+  if (typeof unwrapped !== "object" || unwrapped === null) return null;
+  const r = unwrapped as RawResourceRoleType;
   const id = r.Id ?? r.id;
   const name = r.Name ?? r.name;
   if (!id || !name) return null;
