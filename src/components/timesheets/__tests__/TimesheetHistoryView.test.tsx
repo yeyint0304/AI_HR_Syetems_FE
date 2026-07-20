@@ -1,0 +1,313 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TimesheetHistoryView } from "@/components/timesheets/TimesheetHistoryView";
+import { apiClient } from "@/lib/api/axiosInstance";
+
+jest.mock("@/lib/api/axiosInstance", () => ({
+  apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
+}));
+
+function renderWithClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: 0 }, queries: { retry: false } },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
+const CURRENT_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66af01";
+const PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af02";
+const LOCKED_PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af03";
+const PROJECT_ID = "3fa85f64-5717-4562-b3fc-2c963f66af04";
+const OTHER_PROJECT_ID = "3fa85f64-5717-4562-b3fc-2c963f66af07";
+const PENDING_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af05";
+const APPROVED_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af06";
+const LOCKED_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af08";
+
+const PERIOD = {
+  id: PERIOD_ID,
+  periodStart: "2025-01-06",
+  periodEnd: "2025-02-16",
+  isLocked: false,
+  lockedAt: null,
+  lockedBy: null,
+};
+
+const LOCKED_PERIOD = { ...PERIOD, id: LOCKED_PERIOD_ID, isLocked: true, lockedAt: "2025-01-01T00:00:00Z" };
+
+const PROJECT = {
+  id: PROJECT_ID,
+  code: "PRJ-ALPHA",
+  name: "Project Alpha",
+  description: "",
+  clientName: "Acme Corp",
+  clientEmail: "client@acme.com",
+  startDate: "2025-01-01",
+  endDate: "2025-12-31",
+  maxDailyHours: 8,
+  isActive: true,
+};
+
+const OTHER_PROJECT = { ...PROJECT, id: OTHER_PROJECT_ID, code: "PRJ-BETA", name: "Project Beta" };
+
+const PENDING_ENTRY = {
+  id: PENDING_ENTRY_ID,
+  userId: CURRENT_USER_ID,
+  projectId: PROJECT_ID,
+  projectCode: "PRJ-ALPHA",
+  projectName: "Project Alpha",
+  timesheetPeriodId: PERIOD_ID,
+  entryDate: "2025-01-06",
+  hours: 6,
+  taskDescription: "Existing work",
+  isApproved: false,
+};
+
+const APPROVED_ENTRY = {
+  id: APPROVED_ENTRY_ID,
+  userId: CURRENT_USER_ID,
+  projectId: PROJECT_ID,
+  projectCode: "PRJ-ALPHA",
+  projectName: "Project Alpha",
+  timesheetPeriodId: PERIOD_ID,
+  entryDate: "2025-01-07",
+  hours: 5,
+  taskDescription: "Approved work",
+  isApproved: true,
+};
+
+const LOCKED_PERIOD_ENTRY = {
+  id: LOCKED_ENTRY_ID,
+  userId: CURRENT_USER_ID,
+  projectId: OTHER_PROJECT_ID,
+  projectCode: "PRJ-BETA",
+  projectName: "Project Beta",
+  timesheetPeriodId: LOCKED_PERIOD_ID,
+  entryDate: "2025-01-08",
+  hours: 3,
+  taskDescription: "Work on a now-locked period",
+  isApproved: false,
+};
+
+interface MockOptions {
+  periods?: unknown[];
+  projects?: unknown[];
+  entries?: unknown[];
+}
+
+function mockApi({ periods = [PERIOD], projects = [PROJECT, OTHER_PROJECT], entries = [] }: MockOptions = {}) {
+  (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+    if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
+    if (url === "/projects") return Promise.resolve({ data: { data: projects } });
+    if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
+    return Promise.reject(new Error(`Unexpected GET ${url}`));
+  });
+}
+
+describe("TimesheetHistoryView", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("shows a loading state while fetching", () => {
+    (apiClient.get as jest.Mock).mockReturnValue(new Promise(() => {}));
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(/loading timesheet history/i);
+  });
+
+  it("shows an error state with a retry action when loading fails", async () => {
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/timesheet-periods") {
+        return Promise.reject({
+          isAxiosError: true,
+          response: { data: { message: "Unable to load timesheet periods." } },
+        });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unable to load timesheet periods/i);
+    const retryButton = screen.getByRole("button", { name: /try again/i });
+    expect(retryButton).toBeInTheDocument();
+
+    const callCountBeforeRetry = (apiClient.get as jest.Mock).mock.calls.length;
+    const user = userEvent.setup();
+    await user.click(retryButton);
+    await waitFor(() =>
+      expect((apiClient.get as jest.Mock).mock.calls.length).toBeGreaterThan(callCountBeforeRetry)
+    );
+    expect(apiClient.get).toHaveBeenCalledWith("/timesheet-periods", expect.anything());
+  });
+
+  it("shows an entries error state with a retry action", async () => {
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/timesheet-entries") {
+        return Promise.reject({
+          isAxiosError: true,
+          response: { data: { message: "Unable to load entries." } },
+        });
+      }
+      if (url === "/timesheet-periods") return Promise.resolve({ data: { data: [PERIOD] } });
+      if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT] } });
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    expect(await screen.findByText(/unable to load entries/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it("shows an empty state when the user has no timesheet entries at all", async () => {
+    mockApi({ entries: [] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    expect(await screen.findByText(/you have no timesheet entries yet/i)).toBeInTheDocument();
+  });
+
+  it("renders entries with summary totals and Approved/Pending badges", async () => {
+    mockApi({ entries: [PENDING_ENTRY, APPROVED_ENTRY] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    expect(screen.getByText("11h")).toBeInTheDocument(); // total
+    expect(screen.getByText("5h", { selector: "p" })).toBeInTheDocument(); // approved
+    expect(screen.getByText("6h", { selector: "p" })).toBeInTheDocument(); // pending
+
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("renders a pending, unlocked entry as editable and an approved entry as Locked", async () => {
+    mockApi({ entries: [PENDING_ENTRY, APPROVED_ENTRY] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    expect(screen.getAllByRole("button", { name: /^edit$/i })).toHaveLength(1);
+    expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+  });
+
+  it("renders an entry whose timesheet period is locked as read-only, even if not yet approved", async () => {
+    mockApi({ periods: [PERIOD, LOCKED_PERIOD], entries: [LOCKED_PERIOD_ENTRY] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+  });
+
+  it("edits and saves an editable entry via the Edit action", async () => {
+    mockApi({ entries: [PENDING_ENTRY] });
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: {} });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+
+    const hoursInput = screen.getByLabelText(/hours for project alpha/i);
+    await user.clear(hoursInput);
+    await user.type(hoursInput, "7.5");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${PENDING_ENTRY_ID}`, {
+        hours: 7.5,
+        taskDescription: "Existing work",
+      })
+    );
+    expect(await screen.findByText(/updated successfully/i)).toBeInTheDocument();
+  });
+
+  it("shows a field error and does not call the API when saving invalid hours", async () => {
+    mockApi({ entries: [PENDING_ENTRY] });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const hoursInput = screen.getByLabelText(/hours for project alpha/i);
+    await user.clear(hoursInput);
+    await user.type(hoursInput, "0");
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/hours must be at least/i);
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-progress edit without calling the API", async () => {
+    mockApi({ entries: [PENDING_ENTRY] });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+    await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("filters visible entries by the Date From/Date To range", async () => {
+    const earlyEntry = { ...PENDING_ENTRY, id: "3fa85f64-5717-4562-b3fc-2c963f66af09", entryDate: "2025-01-06" };
+    const lateEntry = { ...APPROVED_ENTRY, id: "3fa85f64-5717-4562-b3fc-2c963f66af10", entryDate: "2025-02-01" };
+    mockApi({ entries: [earlyEntry, lateEntry] });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+    expect(screen.getAllByRole("row")).toHaveLength(3); // header + 2 entries
+    expect(screen.getByText("06 Jan 2025")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/date from/i), "2025-01-15");
+    await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2)); // header + 1 remaining entry
+    expect(screen.queryByText("06 Jan 2025")).not.toBeInTheDocument();
+    expect(screen.getByText("01 Feb 2025")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when no entries match the applied filters", async () => {
+    mockApi({ entries: [PENDING_ENTRY] }); // entryDate: 2025-01-06
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText(/date from/i), "2025-06-01");
+    await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+    expect(await screen.findByText(/no entries match the selected filters/i)).toBeInTheDocument();
+  });
+
+  it("shows a validation error and does not filter when Date From is after Date To", async () => {
+    mockApi({ entries: [PENDING_ENTRY] });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText(/date from/i), "2025-02-01");
+    await user.type(screen.getByLabelText(/date to/i), "2025-01-01");
+    await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+    expect(await screen.findByText(/date from must be on or before date to/i)).toBeInTheDocument();
+    // The (still-valid, unfiltered) entry list remains visible.
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("scopes the entries request to the given currentUserId", async () => {
+    mockApi({ entries: [] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith(
+        "/timesheet-entries",
+        expect.objectContaining({ params: expect.objectContaining({ userId: CURRENT_USER_ID }) })
+      )
+    );
+  });
+});
