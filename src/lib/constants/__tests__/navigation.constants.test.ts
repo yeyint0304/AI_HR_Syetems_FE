@@ -8,6 +8,7 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/projects/new")).toBe("New project");
       expect(getBreadcrumbLabel("/timesheet-periods")).toBe("Timesheet Periods");
       expect(getBreadcrumbLabel("/timesheet-periods/new")).toBe("New timesheet period");
+      expect(getBreadcrumbLabel("/timesheets")).toBe("My Timesheets");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -37,5 +38,17 @@ describe("navigation.constants", () => {
       (item) => item.href === "/timesheet-periods"
     );
     expect(timesheetPeriodsItem?.implemented).toBe(true);
+  });
+
+  it("marks the My Timesheets nav item as implemented", () => {
+    const timesheetSection = NAV_SECTIONS.find((section) => section.label === "Timesheet");
+    const myTimesheetsItem = timesheetSection?.items.find((item) => item.href === "/timesheets");
+    expect(myTimesheetsItem?.implemented).toBe(true);
+  });
+
+  it("still marks the Timesheet History nav item as not-yet-implemented", () => {
+    const timesheetSection = NAV_SECTIONS.find((section) => section.label === "Timesheet");
+    const historyItem = timesheetSection?.items.find((item) => item.href === "/timesheets/history");
+    expect(historyItem?.implemented).toBe(false);
   });
 });
