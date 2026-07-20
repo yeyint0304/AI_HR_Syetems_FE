@@ -5,6 +5,7 @@ import {
   toBackendAssignResourcePayload,
   toBackendChangePasswordPayload,
   toBackendCreateProjectPayload,
+  toBackendCreateTimesheetEntryPayload,
   toBackendCreateTimesheetPeriodPayload,
   toBackendCreateUserPayload,
   toBackendLoginPayload,
@@ -12,6 +13,7 @@ import {
   toBackendRefreshTokenPayload,
   toBackendUpdateProfilePayload,
   toBackendUpdateProjectPayload,
+  toBackendUpdateTimesheetEntryPayload,
 } from "@/lib/server/backendPayloadMappers";
 
 describe("backendPayloadMappers", () => {
@@ -181,6 +183,36 @@ describe("backendPayloadMappers", () => {
     ).toEqual({
       PeriodStart: "2026-03-01",
       PeriodEnd: "2026-05-15",
+    });
+  });
+
+  it("maps a create-timesheet-entry payload to PascalCase", () => {
+    expect(
+      toBackendCreateTimesheetEntryPayload({
+        projectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+        timesheetPeriodId: "31a3ee86-f58c-4434-9f00-7b39493b59e8",
+        entryDate: "2026-03-07",
+        hours: 8,
+        taskDescription: "Worked on feature implementation",
+      })
+    ).toEqual({
+      ProjectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+      TimesheetPeriodId: "31a3ee86-f58c-4434-9f00-7b39493b59e8",
+      EntryDate: "2026-03-07",
+      Hours: 8,
+      TaskDescription: "Worked on feature implementation",
+    });
+  });
+
+  it("maps an update-timesheet-entry payload to PascalCase", () => {
+    expect(
+      toBackendUpdateTimesheetEntryPayload({
+        hours: 6,
+        taskDescription: "Updated task description",
+      })
+    ).toEqual({
+      Hours: 6,
+      TaskDescription: "Updated task description",
     });
   });
 });

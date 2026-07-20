@@ -11,6 +11,10 @@ import type {
   UpdateProjectRequest,
 } from "@/types/project.types";
 import type { CreateTimesheetPeriodRequest } from "@/types/timesheetPeriod.types";
+import type {
+  CreateTimesheetEntryRequest,
+  UpdateTimesheetEntryRequest,
+} from "@/types/timesheetEntry.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -103,5 +107,28 @@ export function toBackendCreateTimesheetPeriodPayload(payload: CreateTimesheetPe
   return {
     PeriodStart: payload.periodStart,
     PeriodEnd: payload.periodEnd,
+  };
+}
+
+/**
+ * Matches `TimesheetEntry/CreateTimesheetEntry`. `UserId` is intentionally
+ * never included here — the backend infers the owning user from the bearer
+ * token, so a client can never create an entry "as" another user.
+ */
+export function toBackendCreateTimesheetEntryPayload(payload: CreateTimesheetEntryRequest) {
+  return {
+    ProjectId: payload.projectId,
+    TimesheetPeriodId: payload.timesheetPeriodId,
+    EntryDate: payload.entryDate,
+    Hours: payload.hours,
+    TaskDescription: payload.taskDescription,
+  };
+}
+
+/** Matches `TimesheetEntry/UpdateTimesheetEntry`, which only accepts `Hours`/`TaskDescription`. */
+export function toBackendUpdateTimesheetEntryPayload(payload: UpdateTimesheetEntryRequest) {
+  return {
+    Hours: payload.hours,
+    TaskDescription: payload.taskDescription,
   };
 }
