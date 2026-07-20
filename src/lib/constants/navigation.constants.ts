@@ -22,14 +22,14 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * added without touching component logic.
  *
  * `implemented: false` marks destinations from the wireframe that don't have
- * a corresponding route yet in this codebase (Report/Invoice/reference-data
- * modules are out of scope for the current feature set) — the `Sidebar`
- * renders those as disabled, clearly-labelled "coming soon" entries instead
- * of dead links that would 404. `Projects`, `Timesheet Periods`,
- * `My Timesheets`, and `Timesheet History` are implemented (see
+ * a corresponding route yet in this codebase (Invoice/reference-data modules
+ * are out of scope for the current feature set) — the `Sidebar` renders
+ * those as disabled, clearly-labelled "coming soon" entries instead of dead
+ * links that would 404. `Projects`, `Timesheet Periods`, `My Timesheets`,
+ * `Timesheet History`, and `Reports` are implemented (see
  * `src/app/(dashboard)/projects/*`, `src/app/(dashboard)/timesheet-periods/*`,
- * `src/app/(dashboard)/timesheets/*`, and
- * `src/app/(dashboard)/timesheets/history/*`).
+ * `src/app/(dashboard)/timesheets/*`, `src/app/(dashboard)/timesheets/history/*`,
+ * and `src/app/(dashboard)/reports/*`).
  */
 export interface NavItem {
   label: string;
@@ -67,7 +67,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Reports",
-    items: [{ label: "Reports", href: "/reports", icon: BarChart3, implemented: false }],
+    items: [{ label: "Reports", href: "/reports", icon: BarChart3, implemented: true }],
   },
   {
     label: "Billing",
@@ -98,6 +98,10 @@ const PAGE_TITLES: Record<string, string> = {
   "/timesheet-periods/new": "New timesheet period",
   "/timesheets": "My Timesheets",
   "/timesheets/history": "Timesheet History",
+  "/reports": "Reports",
+  "/reports/timesheet": "Timesheet Report",
+  "/reports/roles-summary": "User Roles Summary",
+  "/reports/cost-revenue": "Cost & Revenue Report",
 };
 
 /** Matches the dynamic `/projects/[id]/assignments` route. */
