@@ -57,3 +57,30 @@ export const timesheetEntryListQuerySchema = z.object({
   isApproved: z.enum(["true", "false"]).optional(),
 });
 export type TimesheetEntryListQuery = z.infer<typeof timesheetEntryListQuerySchema>;
+
+/**
+ * Client-side-only validation for the "Timesheet History" (`/timesheets/history`)
+ * Date From/Date To filter bar (`docs/HR_System_FE_wireframe.pdf`). The backend's
+ * `TimesheetEntry/GetAllTimesheetEntries` has no date-range query param, so this
+ * range is applied to the already-fetched entries in the component — this schema
+ * only guards against an inverted/malformed range before that filtering runs.
+ * Empty strings are allowed (an unset bound simply means "no lower/upper limit").
+ */
+export const timesheetHistoryFilterSchema = z
+  .object({
+    dateFrom: z
+      .string()
+      .regex(DATE_ONLY_PATTERN, "Use the YYYY-MM-DD date format.")
+      .optional()
+      .or(z.literal("")),
+    dateTo: z
+      .string()
+      .regex(DATE_ONLY_PATTERN, "Use the YYYY-MM-DD date format.")
+      .optional()
+      .or(z.literal("")),
+  })
+  .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
+    message: "Date From must be on or before Date To.",
+    path: ["dateTo"],
+  });
+export type TimesheetHistoryFilterValues = z.infer<typeof timesheetHistoryFilterSchema>;

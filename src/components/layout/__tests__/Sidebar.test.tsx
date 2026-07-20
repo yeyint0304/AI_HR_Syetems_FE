@@ -66,10 +66,10 @@ describe("Sidebar", () => {
   it("renders not-yet-implemented items as disabled, non-navigating controls", () => {
     renderSidebar(projectAdminUser);
 
-    const historyItem = screen.getByRole("button", { name: /timesheet history/i });
-    expect(historyItem).toBeDisabled();
-    expect(historyItem).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("link", { name: /^timesheet history$/i })).not.toBeInTheDocument();
+    const reportsItem = screen.getByRole("button", { name: /reports/i });
+    expect(reportsItem).toBeDisabled();
+    expect(reportsItem).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("link", { name: /^reports$/i })).not.toBeInTheDocument();
   });
 
   it("renders the implemented Projects item as a real navigation link", () => {
@@ -84,6 +84,24 @@ describe("Sidebar", () => {
 
     const timesheetsLink = screen.getByRole("link", { name: /^my timesheets$/i });
     expect(timesheetsLink).toHaveAttribute("href", "/timesheets");
+  });
+
+  it("renders the implemented Timesheet History item as a real navigation link", () => {
+    renderSidebar(projectAdminUser);
+
+    const historyLink = screen.getByRole("link", { name: /^timesheet history$/i });
+    expect(historyLink).toHaveAttribute("href", "/timesheets/history");
+  });
+
+  it("marks only Timesheet History (not My Timesheets) active on /timesheets/history", () => {
+    mockPathname = "/timesheets/history";
+    renderSidebar(projectAdminUser);
+
+    expect(screen.getByRole("link", { name: /^timesheet history$/i })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.getByRole("link", { name: /^my timesheets$/i })).not.toHaveAttribute("aria-current");
   });
 
   it("hides the Administration section for a non-SystemAdmin user", () => {

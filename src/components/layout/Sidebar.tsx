@@ -20,9 +20,23 @@ function getInitials(user: AuthUser | null): string {
   return initials ? initials.toUpperCase() : "U";
 }
 
-function isActivePath(pathname: string | null, href: string): boolean {
-  if (!pathname) return false;
-  return pathname === href || pathname.startsWith(`${href}/`);
+/**
+ * Resolves which single nav `href` should be highlighted as active for the
+ * current `pathname`, picking the *longest* (most specific) matching href
+ * among all implemented items — e.g. on `/timesheets/history`, both
+ * `/timesheets` ("My Timesheets") and `/timesheets/history`
+ * ("Timesheet History") match by prefix, but only the latter, more specific
+ * route should render as active.
+ */
+function resolveActiveHref(pathname: string | null, hrefs: string[]): string | null {
+  if (!pathname) return null;
+  let best: string | null = null;
+  for (const href of hrefs) {
+    if (pathname === href || pathname.startsWith(`${href}/`)) {
+      if (!best || href.length > best.length) best = href;
+    }
+  }
+  return best;
 }
 
 /**
@@ -38,6 +52,11 @@ export function Sidebar({ user, onNavigate }: SidebarProps) {
   const visibleSections = NAV_SECTIONS.filter(
     (section) => !section.requiredRole || user?.role === section.requiredRole
   );
+
+  const implementedHrefs = visibleSections.flatMap((section) =>
+    section.items.filter((item) => item.implemented).map((item) => item.href)
+  );
+  const activeHref = resolveActiveHref(pathname, implementedHrefs);
 
   return (
     <aside
@@ -89,7 +108,7 @@ export function Sidebar({ user, onNavigate }: SidebarProps) {
                   );
                 }
 
-                const isActive = isActivePath(pathname, item.href);
+                const isActive = item.href === activeHref;
 
                 return (
                   <li key={item.href}>

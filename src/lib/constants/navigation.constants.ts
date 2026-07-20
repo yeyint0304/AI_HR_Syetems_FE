@@ -25,11 +25,11 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * a corresponding route yet in this codebase (Report/Invoice/reference-data
  * modules are out of scope for the current feature set) — the `Sidebar`
  * renders those as disabled, clearly-labelled "coming soon" entries instead
- * of dead links that would 404. `Projects`, `Timesheet Periods`, and
- * `My Timesheets` are implemented (see `src/app/(dashboard)/projects/*`,
- * `src/app/(dashboard)/timesheet-periods/*`, and
- * `src/app/(dashboard)/timesheets/*`). `Timesheet History` remains a
- * separate, not-yet-implemented feature.
+ * of dead links that would 404. `Projects`, `Timesheet Periods`,
+ * `My Timesheets`, and `Timesheet History` are implemented (see
+ * `src/app/(dashboard)/projects/*`, `src/app/(dashboard)/timesheet-periods/*`,
+ * `src/app/(dashboard)/timesheets/*`, and
+ * `src/app/(dashboard)/timesheets/history/*`).
  */
 export interface NavItem {
   label: string;
@@ -62,7 +62,7 @@ export const NAV_SECTIONS: NavSection[] = [
         implemented: true,
       },
       { label: "My Timesheets", href: "/timesheets", icon: Timer, implemented: true },
-      { label: "Timesheet History", href: "/timesheets/history", icon: History, implemented: false },
+      { label: "Timesheet History", href: "/timesheets/history", icon: History, implemented: true },
     ],
   },
   {
@@ -97,6 +97,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/timesheet-periods": "Timesheet Periods",
   "/timesheet-periods/new": "New timesheet period",
   "/timesheets": "My Timesheets",
+  "/timesheets/history": "Timesheet History",
 };
 
 /** Matches the dynamic `/projects/[id]/assignments` route. */
