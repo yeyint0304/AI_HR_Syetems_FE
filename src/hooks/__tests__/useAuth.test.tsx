@@ -7,12 +7,16 @@ import {
   useCreateUser,
   useLogin,
   useLogout,
+  useRoles,
+  useUnassignedUsers,
   useUpdateProfile,
 } from "@/hooks/useAuth";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   changePasswordRequest,
   createUserRequest,
+  getRolesRequest,
+  getUnassignedUsersRequest,
   loginRequest,
   logoutRequest,
   updateProfileRequest,
@@ -26,6 +30,8 @@ jest.mock("@/lib/api/auth.api", () => ({
   updateProfileRequest: jest.fn(),
   changePasswordRequest: jest.fn(),
   createUserRequest: jest.fn(),
+  getRolesRequest: jest.fn(),
+  getUnassignedUsersRequest: jest.fn(),
 }));
 
 const mockReplace = jest.fn();
@@ -180,5 +186,33 @@ describe("useCreateUser", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ id: "42" });
+  });
+});
+
+describe("useRoles", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resolves with the fetched role list", async () => {
+    const roles = [{ id: "role-1", name: "SystemAdmin" }];
+    (getRolesRequest as jest.Mock).mockResolvedValueOnce(roles);
+    const { result } = renderHook(() => useRoles(), { wrapper: withQueryClient() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(roles);
+  });
+});
+
+describe("useUnassignedUsers", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resolves with the fetched unassigned-user list", async () => {
+    const users = [
+      { id: "user-1", username: "jsmith", email: "jsmith@hrsystem.com", firstName: "Jamie", lastName: "Smith" },
+    ];
+    (getUnassignedUsersRequest as jest.Mock).mockResolvedValueOnce(users);
+    const { result } = renderHook(() => useUnassignedUsers(), { wrapper: withQueryClient() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(users);
   });
 });

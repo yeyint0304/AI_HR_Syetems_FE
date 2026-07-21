@@ -50,6 +50,35 @@ export interface CreateUserResult {
   id: string;
 }
 
+/**
+ * Reference data backing the "Role" dropdown on the Create User screen
+ * (`Auth/CreateUser` requires a `RoleId`). Sourced from `Auth/GetRoles` per
+ * `docs/HR_System_BE.postman_collection.json` — distinct from
+ * `types/project.types.ts`'s `ResourceRoleType` (a project's per-assignment
+ * job title, e.g. "Senior Developer"), which is a separate backend domain.
+ */
+export interface Role {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+/**
+ * Reference data backing the "User" dropdown on the Project Assignments
+ * screen (`Project/AssignResource` requires a `UserId`). Sourced from
+ * `Auth/GetUnassignedUsers`, which only returns users with no existing
+ * project assignment at all — see `app/api/auth/unassigned-users/route.ts`
+ * for the caveat this implies.
+ */
+export interface UnassignedUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  employeeId?: string | null;
+}
+
 export interface ApiErrorBody {
   message?: string;
   errors?: Record<string, string[]>;

@@ -58,6 +58,6 @@ export const createUserSchema = z.object({
     .union([z.uuid("Enter a valid Country ID (GUID)."), z.literal("")])
     .optional()
     .nullable(),
-  roleId: z.uuid("Select a valid Role ID (GUID)."),
+  roleId: z.uuid("Select a role."),
 });
 export type CreateUserFormValues = z.infer<typeof createUserSchema>;

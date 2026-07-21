@@ -11,6 +11,7 @@ import {
   removeResourceRequest,
   updateProjectRequest,
 } from "@/lib/api/project.api";
+import { UNASSIGNED_USERS_QUERY_KEY } from "@/hooks/useAuth";
 import type {
   AssignResourceRequest,
   CreateProjectRequest,
@@ -87,6 +88,10 @@ export function useAssignResource(projectId: string) {
     mutationFn: (payload: AssignResourceRequest) => assignResourceRequest(projectId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: assignmentsQueryKey(projectId) });
+      // The newly-assigned user is no longer "unassigned" — refresh the
+      // Project Assignments "User" dropdown's reference data so they drop
+      // out of it (see `hooks/useAuth.ts#useUnassignedUsers`).
+      queryClient.invalidateQueries({ queryKey: UNASSIGNED_USERS_QUERY_KEY });
     },
   });
 }

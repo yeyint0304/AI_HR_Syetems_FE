@@ -44,16 +44,26 @@ const ROLE_TYPES = [
   { id: ROLE_TYPE_ID_JUNIOR, name: "Junior Developer" },
 ];
 
-function mockGetResponses() {
+const UNASSIGNED_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+const UNASSIGNED_USERS = [
+  {
+    id: UNASSIGNED_USER_ID,
+    username: "jsmith",
+    email: "jsmith@hrsystem.com",
+    firstName: "Jamie",
+    lastName: "Smith",
+  },
+];
+
+function mockGetResponses(unassignedUsers: unknown[] = UNASSIGNED_USERS) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
     if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [ASSIGNMENT] } });
     if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
+    if (url === "/auth/unassigned-users") return Promise.resolve({ data: { data: unassignedUsers } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
 }
-
-const VALID_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 
 describe("ProjectAssignmentsView", () => {
   beforeEach(() => {
@@ -75,6 +85,7 @@ describe("ProjectAssignmentsView", () => {
       if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
       if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [] } });
       if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
+      if (url === "/auth/unassigned-users") return Promise.resolve({ data: { data: UNASSIGNED_USERS } });
       return Promise.reject(new Error(`Unhandled GET ${url}`));
     });
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
@@ -82,38 +93,79 @@ describe("ProjectAssignmentsView", () => {
     expect(await screen.findByText(/no users are currently assigned/i)).toBeInTheDocument();
   });
 
-  it("assigns a user via the Add User form", async () => {
+  it("populates the User select from the unassigned-users endpoint and assigns a user via the Add User form", async () => {
     mockGetResponses();
     (apiClient.post as jest.Mock).mockResolvedValueOnce({
-      data: { data: { id: "a2", userId: VALID_USER_ID, resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR } },
+      data: { data: { id: "a2", userId: UNASSIGNED_USER_ID, resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR } },
     });
     const user = userEvent.setup();
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
 
     await screen.findByText("Alex Kumar");
-    await user.type(screen.getByLabelText(/user id/i), VALID_USER_ID);
+    expect(await screen.findByRole("option", { name: /jamie smith/i })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/^user$/i), UNASSIGNED_USER_ID);
     await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
     await user.click(screen.getByRole("button", { name: /add user/i }));
 
     await waitFor(() =>
       expect(apiClient.post).toHaveBeenCalledWith("/projects/1/assignments", {
-        userId: VALID_USER_ID,
+        userId: UNASSIGNED_USER_ID,
         resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR,
       })
     );
   });
 
-  it("shows a validation error for an invalid User ID", async () => {
+  it("refetches the unassigned-users list after a successful assignment, so the newly-assigned user drops out of the dropdown", async () => {
+    mockGetResponses();
+    (apiClient.post as jest.Mock).mockResolvedValueOnce({
+      data: { data: { id: "a2", userId: UNASSIGNED_USER_ID, resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR } },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<ProjectAssignmentsView projectId="1" />);
+
+    await screen.findByText("Alex Kumar");
+    await screen.findByRole("option", { name: /jamie smith/i });
+    const unassignedUsersCallsBefore = (apiClient.get as jest.Mock).mock.calls.filter(
+      ([url]) => url === "/auth/unassigned-users"
+    ).length;
+
+    await user.selectOptions(screen.getByLabelText(/^user$/i), UNASSIGNED_USER_ID);
+    await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
+    await user.click(screen.getByRole("button", { name: /add user/i }));
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+    await waitFor(() => {
+      const unassignedUsersCallsAfter = (apiClient.get as jest.Mock).mock.calls.filter(
+        ([url]) => url === "/auth/unassigned-users"
+      ).length;
+      expect(unassignedUsersCallsAfter).toBeGreaterThan(unassignedUsersCallsBefore);
+    });
+  });
+
+  it("shows a validation error when no user is selected", async () => {
     mockGetResponses();
     const user = userEvent.setup();
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
 
     await screen.findByText("Alex Kumar");
-    await user.type(screen.getByLabelText(/user id/i), "not-a-guid");
+    await screen.findByRole("option", { name: /jamie smith/i });
+    await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
     await user.click(screen.getByRole("button", { name: /add user/i }));
 
-    expect(await screen.findByText(/enter a valid user id/i)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/select a user/i);
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("shows an empty state and disables the form when there are no unassigned users", async () => {
+    mockGetResponses([]);
+    renderWithClient(<ProjectAssignmentsView projectId="1" />);
+
+    await screen.findByText("Alex Kumar");
+    expect(
+      await screen.findByText(/no unassigned users available right now/i)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^user$/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /add user/i })).toBeDisabled();
   });
 
   it("removes an assignment after confirming in the dialog", async () => {

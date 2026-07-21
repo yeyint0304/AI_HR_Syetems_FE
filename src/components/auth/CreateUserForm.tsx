@@ -1,22 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { SelectField } from "@/components/ui/SelectField";
 import { Alert } from "@/components/ui/Alert";
 import { createUserSchema, type CreateUserFormValues } from "@/lib/validators/auth.validators";
-import { useCreateUser } from "@/hooks/useAuth";
+import { useCreateUser, useRoles } from "@/hooks/useAuth";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 
 export function CreateUserForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const createUserMutation = useCreateUser();
+  const { data: roles, isLoading: isRolesLoading, isError: isRolesError, error: rolesError } = useRoles();
 
   const {
+    control,
     register,
     handleSubmit,
     reset,
@@ -60,6 +63,9 @@ export function CreateUserForm() {
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
       {formError && <Alert variant="error">{formError}</Alert>}
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
+      {isRolesError && (
+        <Alert variant="error">{getApiErrorMessage(rolesError, "Unable to load roles.")}</Alert>
+      )}
 
       <div className="grid gap-5 sm:grid-cols-2">
         <TextField label="First name" error={errors.firstName?.message} {...register("firstName")} />
@@ -94,11 +100,29 @@ export function CreateUserForm() {
       />
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <TextField
-          label="Role ID"
-          hint="GUID of the role to assign."
-          error={errors.roleId?.message}
-          {...register("roleId")}
+        <Controller
+          control={control}
+          name="roleId"
+          render={({ field }) => (
+            <SelectField
+              label="Role"
+              name={field.name}
+              ref={field.ref}
+              value={field.value}
+              onBlur={field.onBlur}
+              onChange={field.onChange}
+              disabled={isRolesLoading || (roles?.length ?? 0) === 0}
+              placeholder={
+                isRolesLoading
+                  ? "Loading roles…"
+                  : (roles?.length ?? 0) === 0
+                    ? "No roles available"
+                    : "Select a role..."
+              }
+              error={errors.roleId?.message}
+              options={(roles ?? []).map((role) => ({ value: role.id, label: role.name }))}
+            />
+          )}
         />
         <TextField
           label="Country ID"

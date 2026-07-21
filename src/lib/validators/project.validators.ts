@@ -51,7 +51,7 @@ export type UpdateProjectFormValues = z.infer<typeof updateProjectSchema>;
 
 /** Matches `Project/AssignResource`. */
 export const assignResourceSchema = z.object({
-  userId: z.uuid("Enter a valid User ID (GUID)."),
+  userId: z.uuid("Select a user."),
   resourceRoleTypeId: z.uuid("Select a resource role."),
 });
 export type AssignResourceFormValues = z.infer<typeof assignResourceSchema>;
