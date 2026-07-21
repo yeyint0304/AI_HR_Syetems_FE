@@ -108,6 +108,47 @@ describe("GET /api/auth/unassigned-users", () => {
     );
   });
 
+  it("returns the unassigned-user list when the backend paginates Data as { TotalCount, PageNo, PageSize, Items }", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          TotalCount: 2,
+          PageNo: 1,
+          PageSize: 10,
+          Items: [
+            {
+              UserId: "a3eb4839-7ae3-4987-9df5-0368e57c3543",
+              Username: "aln",
+              Email: "aln@hrsystem.com",
+              FirstName: "Aung",
+              LastName: "Lin",
+              EmployeeId: "EMP-0002",
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual([
+      {
+        id: "a3eb4839-7ae3-4987-9df5-0368e57c3543",
+        username: "aln",
+        email: "aln@hrsystem.com",
+        firstName: "Aung",
+        lastName: "Lin",
+        employeeId: "EMP-0002",
+      },
+    ]);
+  });
+
   it("returns a 502 fallback when the backend call itself fails", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock).mockRejectedValueOnce({

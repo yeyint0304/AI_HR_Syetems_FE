@@ -93,9 +93,26 @@ export function mapBackendUnassignedUser(raw: unknown): UnassignedUser | null {
   };
 }
 
-/** Maps a backend UnassignedUser list (`Auth/GetUserList`, already unwrapped from the `Data` envelope). */
+/**
+ * Maps `Auth/GetUserList`'s response into a flat `UnassignedUser[]`.
+ *
+ * The saved "200 - Success" example in
+ * `docs/HR_System_BE.postman_collection.json` shows `Data` as a bare array,
+ * but the live backend actually returns it *paginated* —
+ * `Data: { TotalCount, PageNo, PageSize, Items: [...] }` — the same shape
+ * `mapBackendResourceRoleTypeList`/`mapBackendCurrencyList` already handle
+ * for their own endpoints. `extractArray(raw)` alone can't see the nested
+ * array here, since `raw` is the *outer* envelope and `obj.Data` is an
+ * object, not an array, so it silently fell through to `[]` — every user
+ * looked "already assigned" and the "Add User to Project" select on the
+ * Project Assignments screen always rendered empty. Unwrapping the envelope
+ * first lets `extractArray` find the nested `Items` array instead, while
+ * still tolerating the flat-array shape the docs describe (`extractArray`
+ * returns the array as-is when it's passed one directly).
+ */
 export function mapBackendUnassignedUserList(raw: unknown): UnassignedUser[] {
-  return extractArray(raw)
+  const envelope = readBackendEnvelope(raw);
+  return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendUnassignedUser)
     .filter((user): user is UnassignedUser => user !== null);
 }
