@@ -14,6 +14,8 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/reports/timesheet")).toBe("Timesheet Report");
       expect(getBreadcrumbLabel("/reports/roles-summary")).toBe("User Roles Summary");
       expect(getBreadcrumbLabel("/reports/cost-revenue")).toBe("Cost & Revenue Report");
+      expect(getBreadcrumbLabel("/invoices")).toBe("Invoices");
+      expect(getBreadcrumbLabel("/invoices/generate")).toBe("Generate Invoice");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -24,6 +26,10 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/projects/3fa85f64-5717-4562-b3fc-2c963f66afa6/assignments")).toBe(
         "Project assignments"
       );
+    });
+
+    it("resolves the dynamic invoice detail route", () => {
+      expect(getBreadcrumbLabel("/invoices/3fa85f64-5717-4562-b3fc-2c963f66afa6")).toBe("Invoice detail");
     });
 
     it("falls back to Dashboard for unknown routes", () => {
@@ -61,5 +67,12 @@ describe("navigation.constants", () => {
     const reportsSection = NAV_SECTIONS.find((section) => section.label === "Reports");
     const reportsItem = reportsSection?.items.find((item) => item.href === "/reports");
     expect(reportsItem?.implemented).toBe(true);
+  });
+
+  it("marks the Invoices nav item as implemented, with no section-level role restriction", () => {
+    const billingSection = NAV_SECTIONS.find((section) => section.label === "Billing");
+    const invoicesItem = billingSection?.items.find((item) => item.href === "/invoices");
+    expect(invoicesItem?.implemented).toBe(true);
+    expect(billingSection?.requiredRole).toBeUndefined();
   });
 });

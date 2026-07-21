@@ -64,12 +64,19 @@ describe("Sidebar", () => {
   });
 
   it("renders not-yet-implemented items as disabled, non-navigating controls", () => {
+    renderSidebar(systemAdminUser);
+
+    const usersItem = screen.getByRole("button", { name: /users/i });
+    expect(usersItem).toBeDisabled();
+    expect(usersItem).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("link", { name: /^users$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the implemented Invoices item as a real navigation link", () => {
     renderSidebar(projectAdminUser);
 
-    const invoicesItem = screen.getByRole("button", { name: /invoices/i });
-    expect(invoicesItem).toBeDisabled();
-    expect(invoicesItem).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("link", { name: /^invoices$/i })).not.toBeInTheDocument();
+    const invoicesLink = screen.getByRole("link", { name: /^invoices$/i });
+    expect(invoicesLink).toHaveAttribute("href", "/invoices");
   });
 
   it("renders the implemented Reports item as a real navigation link", () => {

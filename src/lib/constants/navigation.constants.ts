@@ -22,14 +22,18 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * added without touching component logic.
  *
  * `implemented: false` marks destinations from the wireframe that don't have
- * a corresponding route yet in this codebase (Invoice/reference-data modules
- * are out of scope for the current feature set) — the `Sidebar` renders
- * those as disabled, clearly-labelled "coming soon" entries instead of dead
- * links that would 404. `Projects`, `Timesheet Periods`, `My Timesheets`,
- * `Timesheet History`, and `Reports` are implemented (see
+ * a corresponding route yet in this codebase (the Administration reference-data
+ * modules are out of scope for the current feature set) — the `Sidebar`
+ * renders those as disabled, clearly-labelled "coming soon" entries instead of
+ * dead links that would 404. `Projects`, `Timesheet Periods`, `My Timesheets`,
+ * `Timesheet History`, `Reports`, and `Invoices` are implemented (see
  * `src/app/(dashboard)/projects/*`, `src/app/(dashboard)/timesheet-periods/*`,
  * `src/app/(dashboard)/timesheets/*`, `src/app/(dashboard)/timesheets/history/*`,
- * and `src/app/(dashboard)/reports/*`).
+ * `src/app/(dashboard)/reports/*`, and `src/app/(dashboard)/invoices/*`).
+ * `Invoices` has no `requiredRole` at the section level (matching the
+ * wireframe, where ProjectAdmin "Sarah Chen" also sees the Billing section),
+ * but each `/invoices*` page independently redirects non-SystemAdmin/ProjectAdmin
+ * visitors — see `lib/constants/invoice.constants.ts`.
  */
 export interface NavItem {
   label: string;
@@ -71,7 +75,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Billing",
-    items: [{ label: "Invoices", href: "/invoices", icon: Receipt, implemented: false }],
+    items: [{ label: "Invoices", href: "/invoices", icon: Receipt, implemented: true }],
   },
   {
     label: "Administration",
@@ -102,17 +106,22 @@ const PAGE_TITLES: Record<string, string> = {
   "/reports/timesheet": "Timesheet Report",
   "/reports/roles-summary": "User Roles Summary",
   "/reports/cost-revenue": "Cost & Revenue Report",
+  "/invoices": "Invoices",
+  "/invoices/generate": "Generate Invoice",
 };
 
 /** Matches the dynamic `/projects/[id]/assignments` route. */
 const PROJECT_ASSIGNMENTS_ROUTE_PATTERN = /^\/projects\/[^/]+\/assignments$/;
 /** Matches the dynamic `/projects/[id]` edit route (excludes the static `/projects/new`). */
 const PROJECT_EDIT_ROUTE_PATTERN = /^\/projects\/(?!new$)[^/]+$/;
+/** Matches the dynamic `/invoices/[id]` detail route (excludes the static `/invoices/generate`). */
+const INVOICE_DETAIL_ROUTE_PATTERN = /^\/invoices\/(?!generate$)[^/]+$/;
 
 /** Resolves the current page's breadcrumb label, falling back to "Dashboard". */
 export function getBreadcrumbLabel(pathname: string): string {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
   if (PROJECT_ASSIGNMENTS_ROUTE_PATTERN.test(pathname)) return "Project assignments";
   if (PROJECT_EDIT_ROUTE_PATTERN.test(pathname)) return "Edit project";
+  if (INVOICE_DETAIL_ROUTE_PATTERN.test(pathname)) return "Invoice detail";
   return "Dashboard";
 }
