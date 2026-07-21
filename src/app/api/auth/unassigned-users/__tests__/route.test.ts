@@ -119,4 +119,18 @@ describe("GET /api/auth/unassigned-users", () => {
 
     expect(response.status).toBe(502);
   });
+
+  it("treats a 404 from the backend as an empty list rather than an error", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 404, data: { message: "Not Found" } },
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual([]);
+  });
 });

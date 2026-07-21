@@ -20,10 +20,15 @@ const ROLES = [
   { id: ROLE_ID, name: "ProjectAdmin" },
   { id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", name: "Employee" },
 ];
+const COUNTRIES = [
+  { id: "22222222-2222-2222-2222-222222222201", code: "SG", name: "Singapore" },
+  { id: "22222222-2222-2222-2222-222222222202", code: "US", name: "United States" },
+];
 
 function mockRolesResponse() {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/auth/roles") return Promise.resolve({ data: { data: ROLES } });
+    if (url === "/countries") return Promise.resolve({ data: { data: COUNTRIES } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
 }
@@ -52,6 +57,31 @@ describe("CreateUserForm", () => {
     expect(screen.getByLabelText(/^temporary password$/i)).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: "ProjectAdmin" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create user/i })).toBeInTheDocument();
+  });
+
+  it("renders a Country select populated from the countries endpoint (GET /countries)", async () => {
+    mockRolesResponse();
+    renderWithClient(<CreateUserForm />);
+
+    expect(await screen.findByRole("option", { name: "Singapore (SG)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "United States (US)" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^country$/i).tagName).toBe("SELECT");
+  });
+
+  it("shows an error and disables the Country select when the countries request fails", async () => {
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/auth/roles") return Promise.resolve({ data: { data: ROLES } });
+      if (url === "/countries")
+        return Promise.reject({
+          isAxiosError: true,
+          response: { data: { message: "Unable to load countries." } },
+        });
+      return Promise.reject(new Error(`Unhandled GET ${url}`));
+    });
+    renderWithClient(<CreateUserForm />);
+
+    expect(await screen.findByText(/unable to load countries/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^country$/i)).toBeDisabled();
   });
 
   it("shows client-side validation errors when submitted empty", async () => {
@@ -121,9 +151,14 @@ describe("CreateUserForm", () => {
   });
 
   it("shows an error and disables the Role select when the roles request fails", async () => {
-    (apiClient.get as jest.Mock).mockRejectedValueOnce({
-      isAxiosError: true,
-      response: { data: { message: "Unable to load roles." } },
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/auth/roles")
+        return Promise.reject({
+          isAxiosError: true,
+          response: { data: { message: "Unable to load roles." } },
+        });
+      if (url === "/countries") return Promise.resolve({ data: { data: COUNTRIES } });
+      return Promise.reject(new Error(`Unhandled GET ${url}`));
     });
     renderWithClient(<CreateUserForm />);
 

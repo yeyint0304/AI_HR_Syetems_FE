@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
+import { SelectField } from "@/components/ui/SelectField";
 import { Alert } from "@/components/ui/Alert";
 import {
   updateProfileSchema,
   type UpdateProfileFormValues,
 } from "@/lib/validators/auth.validators";
 import { useUpdateProfile } from "@/hooks/useAuth";
+import { useCountryList } from "@/hooks/useCountries";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { AuthUser } from "@/types/auth.types";
 
@@ -22,8 +24,15 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const updateProfileMutation = useUpdateProfile();
+  const {
+    data: countries,
+    isLoading: isCountriesLoading,
+    isError: isCountriesError,
+    error: countriesError,
+  } = useCountryList();
 
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors, isDirty },
@@ -61,6 +70,9 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
       {formError && <Alert variant="error">{formError}</Alert>}
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
+      {isCountriesError && (
+        <Alert variant="error">{getApiErrorMessage(countriesError, "Unable to load countries.")}</Alert>
+      )}
 
       <div className="grid gap-5 sm:grid-cols-2">
         <TextField label="First name" error={errors.firstName?.message} {...register("firstName")} />
@@ -75,11 +87,33 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
         {...register("email")}
       />
 
-      <TextField
-        label="Country ID"
-        hint="Optional. Leave blank if not applicable."
-        error={errors.countryId?.message}
-        {...register("countryId")}
+      <Controller
+        control={control}
+        name="countryId"
+        render={({ field }) => (
+          <SelectField
+            label="Country"
+            name={field.name}
+            ref={field.ref}
+            value={field.value ?? ""}
+            onBlur={field.onBlur}
+            onChange={field.onChange}
+            disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
+            hint="Optional. Leave blank if not applicable."
+            placeholder={
+              isCountriesLoading
+                ? "Loading countries…"
+                : (countries?.length ?? 0) === 0
+                  ? "No countries available"
+                  : "Select a country..."
+            }
+            error={errors.countryId?.message}
+            options={(countries ?? []).map((country) => ({
+              value: country.id,
+              label: `${country.name} (${country.code})`,
+            }))}
+          />
+        )}
       />
 
       <div>

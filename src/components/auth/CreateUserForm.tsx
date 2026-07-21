@@ -10,6 +10,7 @@ import { SelectField } from "@/components/ui/SelectField";
 import { Alert } from "@/components/ui/Alert";
 import { createUserSchema, type CreateUserFormValues } from "@/lib/validators/auth.validators";
 import { useCreateUser, useRoles } from "@/hooks/useAuth";
+import { useCountryList } from "@/hooks/useCountries";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 
 export function CreateUserForm() {
@@ -17,6 +18,12 @@ export function CreateUserForm() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const createUserMutation = useCreateUser();
   const { data: roles, isLoading: isRolesLoading, isError: isRolesError, error: rolesError } = useRoles();
+  const {
+    data: countries,
+    isLoading: isCountriesLoading,
+    isError: isCountriesError,
+    error: countriesError,
+  } = useCountryList();
 
   const {
     control,
@@ -65,6 +72,9 @@ export function CreateUserForm() {
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
       {isRolesError && (
         <Alert variant="error">{getApiErrorMessage(rolesError, "Unable to load roles.")}</Alert>
+      )}
+      {isCountriesError && (
+        <Alert variant="error">{getApiErrorMessage(countriesError, "Unable to load countries.")}</Alert>
       )}
 
       <div className="grid gap-5 sm:grid-cols-2">
@@ -124,11 +134,33 @@ export function CreateUserForm() {
             />
           )}
         />
-        <TextField
-          label="Country ID"
-          hint="Optional."
-          error={errors.countryId?.message}
-          {...register("countryId")}
+        <Controller
+          control={control}
+          name="countryId"
+          render={({ field }) => (
+            <SelectField
+              label="Country"
+              name={field.name}
+              ref={field.ref}
+              value={field.value ?? ""}
+              onBlur={field.onBlur}
+              onChange={field.onChange}
+              disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
+              hint="Optional."
+              placeholder={
+                isCountriesLoading
+                  ? "Loading countries…"
+                  : (countries?.length ?? 0) === 0
+                    ? "No countries available"
+                    : "Select a country..."
+              }
+              error={errors.countryId?.message}
+              options={(countries ?? []).map((country) => ({
+                value: country.id,
+                label: `${country.name} (${country.code})`,
+              }))}
+            />
+          )}
         />
       </div>
 

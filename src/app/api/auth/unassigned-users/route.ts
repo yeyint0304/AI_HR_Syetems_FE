@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import axios from "axios";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
@@ -58,6 +59,17 @@ export async function GET() {
       { status: 200 }
     );
   } catch (error) {
+    // Some backend deployments respond 404 Not Found (rather than 200 with an
+    // empty array) from `Auth/GetUnassignedUsers` when every user is already
+    // assigned to a project — a valid "no results" outcome, not a real error.
+    // Without this, the Project Assignments "Add User to Project" section
+    // surfaced a scary "Unable to load users available to assign" error alert
+    // instead of the friendly "no unassigned users available" empty state
+    // that `ProjectAssignmentsView` already handles for a genuinely empty list.
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return NextResponse.json({ data: [] }, { status: 200 });
+    }
+
     const { status, message } = normalizeBackendError(error, "Unable to load unassigned users.");
     return NextResponse.json({ message }, { status });
   }
