@@ -103,7 +103,7 @@ describe("GET /api/auth/unassigned-users", () => {
       },
     ]);
     expect(backendApiClient.get).toHaveBeenCalledWith(
-      "/Auth/GetUnassignedUsers",
+      "/Auth/GetUserList",
       expect.objectContaining({ headers: { Authorization: `Bearer ${projectAdminToken}` } })
     );
   });

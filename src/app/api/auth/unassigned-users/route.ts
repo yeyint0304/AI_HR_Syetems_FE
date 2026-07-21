@@ -12,14 +12,17 @@ import { canManageProjects } from "@/lib/constants/project.constants";
  * [Auth][SystemAdmin|ProjectAdmin] Read-only reference data backing the
  * "User" select box on the Project Assignments screen
  * (`Project/AssignResource` requires a `UserId`), sourced from
- * `Auth/GetUnassignedUsers` per `docs/HR_System_BE.postman_collection.json`.
- * Gated to the same `canManageProjects` roles as
- * `GET /api/projects/[id]/assignments` — regular users can't reach the
- * Assignments screen at all, so there's no reason to expose this list to
- * them either.
+ * `Auth/GetUserList` per `docs/HR_System_BE.postman_collection.json` (the
+ * collection documents this exact call, for this exact purpose, under the
+ * folder name "Get Unassigned User List" — the endpoint's *path* is
+ * `Auth/GetUserList`; there is no `Auth/GetUnassignedUsers` route on the
+ * backend at all, so calling that name 404s/errors every time). Gated to
+ * the same `canManageProjects` roles as `GET /api/projects/[id]/assignments`
+ * — regular users can't reach the Assignments screen at all, so there's no
+ * reason to expose this list to them either.
  *
- * Note: `Auth/GetUnassignedUsers` has no per-project parameter — it returns
- * users with *no* project assignment at all, backend-wide. A user already
+ * Note: `Auth/GetUserList` has no per-project parameter — it returns users
+ * with *no* project assignment at all, backend-wide. A user already
  * assigned to a *different* project won't appear here even though they
  * could validly be added to this one too. This is a limitation of the
  * documented backend contract, not a bug in this Route Handler.
@@ -50,7 +53,7 @@ export async function GET() {
   }
 
   try {
-    const response = await backendApiClient.get("/Auth/GetUnassignedUsers", {
+    const response = await backendApiClient.get("/Auth/GetUserList", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -60,7 +63,7 @@ export async function GET() {
     );
   } catch (error) {
     // Some backend deployments respond 404 Not Found (rather than 200 with an
-    // empty array) from `Auth/GetUnassignedUsers` when every user is already
+    // empty array) from `Auth/GetUserList` when every user is already
     // assigned to a project — a valid "no results" outcome, not a real error.
     // Without this, the Project Assignments "Add User to Project" section
     // surfaced a scary "Unable to load users available to assign" error alert

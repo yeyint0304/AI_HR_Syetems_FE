@@ -66,9 +66,11 @@ export interface Role {
 /**
  * Reference data backing the "User" dropdown on the Project Assignments
  * screen (`Project/AssignResource` requires a `UserId`). Sourced from
- * `Auth/GetUnassignedUsers`, which only returns users with no existing
- * project assignment at all — see `app/api/auth/unassigned-users/route.ts`
- * for the caveat this implies.
+ * `Auth/GetUserList` (the endpoint's actual path per
+ * `docs/HR_System_BE.postman_collection.json` — there is no
+ * `Auth/GetUnassignedUsers` route on the backend), which only returns users
+ * with no existing project assignment at all — see
+ * `app/api/auth/unassigned-users/route.ts` for the caveat this implies.
  */
 export interface UnassignedUser {
   id: string;

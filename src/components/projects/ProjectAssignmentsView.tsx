@@ -39,7 +39,7 @@ function getInitials(name?: string): string {
  * Project" form (User select + Resource role select -> `Project/AssignResource`).
  *
  * Both selects are backed by live reference-data dropdowns:
- *   - "User" is sourced from `Auth/GetUnassignedUsers`
+ *   - "User" is sourced from `Auth/GetUserList`
  *     (`hooks/useAuth.ts#useUnassignedUsers`) — note this only returns users
  *     with *no* project assignment at all, backend-wide, so a user already
  *     assigned to a different project won't appear here (a limitation of the

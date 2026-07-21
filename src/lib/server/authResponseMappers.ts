@@ -4,7 +4,7 @@ import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backen
 import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
 
 /**
- * Normalizes the .NET backend's `Auth/GetRoles` / `Auth/GetUnassignedUsers`
+ * Normalizes the .NET backend's `Auth/GetRoles` / `Auth/GetUserList`
  * response shapes into the camelCase DTOs this app renders, following the
  * same envelope-unwrapping convention as `lib/server/projectResponseMappers.ts`
  * / `lib/server/timesheetPeriodResponseMappers.ts`.
@@ -93,7 +93,7 @@ export function mapBackendUnassignedUser(raw: unknown): UnassignedUser | null {
   };
 }
 
-/** Maps a backend UnassignedUser list (`Auth/GetUnassignedUsers`, already unwrapped from the `Data` envelope). */
+/** Maps a backend UnassignedUser list (`Auth/GetUserList`, already unwrapped from the `Data` envelope). */
 export function mapBackendUnassignedUserList(raw: unknown): UnassignedUser[] {
   return extractArray(raw)
     .map(mapBackendUnassignedUser)

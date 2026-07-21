@@ -38,11 +38,14 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  *
  * The wireframe's `/admin/users` is a full "User Management" list (all users,
  * role badges, an "Add User" button) — but `docs/HR_System_BE.postman_collection.json`
- * exposes no "list all users" endpoint (only `Auth/CreateUser`, `Auth/GetRoles`,
- * and `Auth/GetUnassignedUsers`), so that list can't be backed by real data yet.
- * The "Users" item therefore links straight to the one working piece of that
- * screen — `/admin/users/new` ("Create User") — and is enabled for SystemAdmin
- * rather than left disabled, since that page is fully implemented.
+ * exposes no dedicated "list all users with roles" endpoint for that screen
+ * (only `Auth/CreateUser`, `Auth/GetRoles`, and `Auth/GetUserList` — the
+ * latter used solely as the unassigned-users source for the Project
+ * Assignments form, per `app/api/auth/unassigned-users/route.ts`), so that
+ * list can't be backed by real data yet. The "Users" item therefore links
+ * straight to the one working piece of that screen — `/admin/users/new`
+ * ("Create User") — and is enabled for SystemAdmin rather than left
+ * disabled, since that page is fully implemented.
  */
 export interface NavItem {
   label: string;

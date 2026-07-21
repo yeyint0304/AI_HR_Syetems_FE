@@ -51,7 +51,12 @@ export async function getRolesRequest(): Promise<Role[]> {
   return data.data;
 }
 
-/** Read-only reference data backing the "User" select box on the Project Assignments form. */
+/**
+ * Read-only reference data backing the "User" select box on the Project
+ * Assignments form. Proxies through this app's own `/api/auth/unassigned-users`
+ * Route Handler, which in turn calls the backend's `Auth/GetUserList`
+ * endpoint (see `app/api/auth/unassigned-users/route.ts`).
+ */
 export async function getUnassignedUsersRequest(): Promise<UnassignedUser[]> {
   const { data } = await apiClient.get<{ data: UnassignedUser[] }>("/auth/unassigned-users");
   return data.data;
