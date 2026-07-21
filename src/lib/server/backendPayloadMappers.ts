@@ -15,6 +15,7 @@ import type {
   CreateTimesheetEntryRequest,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
+import type { GenerateInvoiceRequest, UpdateInvoiceRequest } from "@/types/invoice.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -130,5 +131,37 @@ export function toBackendUpdateTimesheetEntryPayload(payload: UpdateTimesheetEnt
   return {
     Hours: payload.hours,
     TaskDescription: payload.taskDescription,
+  };
+}
+
+/**
+ * Matches `Invoice/GenerateInvoice`. `ClientEmail`/`IssuedDate`/`DueDate`/`Notes`
+ * are documented as optional — `undefined` (rather than an empty string) is
+ * forwarded when omitted so the backend applies its own defaults/auto-generation
+ * (e.g. the invoice number) instead of receiving an empty-string override.
+ */
+export function toBackendGenerateInvoicePayload(payload: GenerateInvoiceRequest) {
+  return {
+    ProjectId: payload.projectId,
+    BillingPeriodStart: payload.billingPeriodStart,
+    BillingPeriodEnd: payload.billingPeriodEnd,
+    CurrencyId: payload.currencyId,
+    ClientName: payload.clientName,
+    ClientEmail: payload.clientEmail || undefined,
+    IssuedDate: payload.issuedDate || undefined,
+    DueDate: payload.dueDate || undefined,
+    Notes: payload.notes || undefined,
+  };
+}
+
+/** Matches `Invoice/UpdateInvoice` — every field is optional; only `Draft` invoices may be updated. */
+export function toBackendUpdateInvoicePayload(payload: UpdateInvoiceRequest) {
+  return {
+    CurrencyId: payload.currencyId || undefined,
+    ClientName: payload.clientName || undefined,
+    ClientEmail: payload.clientEmail || undefined,
+    IssuedDate: payload.issuedDate || undefined,
+    DueDate: payload.dueDate || undefined,
+    Notes: payload.notes || undefined,
   };
 }
