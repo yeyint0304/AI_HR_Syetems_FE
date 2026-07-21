@@ -169,8 +169,22 @@ export function mapBackendResourceRoleType(raw: unknown): ResourceRoleType | nul
   };
 }
 
+/**
+ * Maps `ResourceRoleType/GetAllResourceRoleTypes`'s response into a flat
+ * `ResourceRoleType[]`. Per the saved "200 - Success" example in
+ * `docs/HR_System_BE.postman_collection.json`, this endpoint — unlike
+ * `Project/GetProjectAssignments`, whose `Data` is already a bare array — is
+ * *paginated*: `Data` is `{ Items: [...], TotalCount, Page, PageSize }`, not
+ * an array itself. `extractArray(raw)` alone can't see that, since `raw` here
+ * is the *outer* envelope and `obj.Data` is an object, not an array, so it
+ * fell through to `[]` and silently emptied the "Resource role" dropdown on
+ * the Project Assignments screen. Unwrapping the envelope first (same fix as
+ * `lib/server/currencyResponseMappers.ts#mapBackendCurrencyList`) lets
+ * `extractArray` find the nested `Items` array instead.
+ */
 export function mapBackendResourceRoleTypeList(raw: unknown): ResourceRoleType[] {
-  return extractArray(raw)
+  const envelope = readBackendEnvelope(raw);
+  return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendResourceRoleType)
     .filter((roleType): roleType is ResourceRoleType => roleType !== null);
 }
