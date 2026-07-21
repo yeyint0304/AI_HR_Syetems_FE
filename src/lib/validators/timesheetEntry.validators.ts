@@ -3,6 +3,7 @@ import {
   MAX_ENTRY_HOURS,
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
+import { guidSchema } from "@/lib/validators/shared.validators";
 
 /**
  * Shared Zod schemas for the Timesheet Entry feature. Used both client-side
@@ -49,11 +50,20 @@ export type UpdateTimesheetEntryFormValues = z.infer<typeof updateTimesheetEntry
  * Matches the optional query params documented on `TimesheetEntry/GetAllTimesheetEntries`
  * ("All query params are optional — enable to filter."). Used server-side (Route Handler)
  * to validate/normalize incoming `URLSearchParams` before forwarding them to the backend.
+ *
+ * Uses the lenient `guidSchema` (not `z.uuid()`) because `userId` here is
+ * frequently the signed-in user's own JWT `sub` claim (see
+ * `MyTimesheetView`/`TimesheetHistoryView`'s `currentUserId` prop) — and the
+ * backend's seeded `SystemAdmin` account id
+ * (`00000000-0000-0000-0000-000000000001`, per
+ * `docs/HR_System_BE.postman_collection.json`) fails `z.uuid()`'s stricter
+ * RFC 9562/4122 variant check, which was surfacing as a 400 ("Invalid filter
+ * parameters.") on both of those screens for that account.
  */
 export const timesheetEntryListQuerySchema = z.object({
-  userId: z.uuid("Enter a valid user ID.").optional(),
-  projectId: z.uuid("Enter a valid project ID.").optional(),
-  timesheetPeriodId: z.uuid("Enter a valid timesheet period ID.").optional(),
+  userId: guidSchema("Enter a valid user ID.").optional(),
+  projectId: guidSchema("Enter a valid project ID.").optional(),
+  timesheetPeriodId: guidSchema("Enter a valid timesheet period ID.").optional(),
   isApproved: z.enum(["true", "false"]).optional(),
 });
 export type TimesheetEntryListQuery = z.infer<typeof timesheetEntryListQuerySchema>;

@@ -101,6 +101,19 @@ describe("timesheetEntry.validators", () => {
       expect(timesheetEntryListQuerySchema.safeParse({ userId: "nope" }).success).toBe(false);
     });
 
+    it("accepts the backend's seeded SystemAdmin user id as userId", () => {
+      // Regression test: the seeded SystemAdmin account id
+      // (`docs/HR_System_BE.postman_collection.json`) fails Zod's stricter
+      // `z.uuid()` check — this previously caused a 400 ("Invalid filter
+      // parameters.") on `GET /api/timesheet-entries` for that account when
+      // "My Timesheets"/"Timesheet History" scoped the request to
+      // `userId: currentUserId`.
+      const result = timesheetEntryListQuerySchema.safeParse({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+      expect(result.success).toBe(true);
+    });
+
     it("rejects an invalid isApproved value", () => {
       expect(timesheetEntryListQuerySchema.safeParse({ isApproved: "yes" }).success).toBe(false);
     });

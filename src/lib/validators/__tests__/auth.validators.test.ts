@@ -2,6 +2,7 @@ import {
   loginSchema,
   changePasswordSchema,
   updateProfileSchema,
+  createUserSchema,
 } from "@/lib/validators/auth.validators";
 
 describe("loginSchema", () => {
@@ -92,5 +93,37 @@ describe("updateProfileSchema", () => {
       email: "not-an-email",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("createUserSchema", () => {
+  const base = {
+    username: "newuser",
+    email: "newuser@example.com",
+    password: "Password1!",
+    firstName: "New",
+    lastName: "User",
+    employeeId: "",
+    countryId: "",
+  };
+
+  it("accepts a seeded backend Role id (e.g. SystemAdmin) as roleId", () => {
+    // Regression test: `Auth/GetRoles` returns seeded role ids like this one
+    // (`docs/HR_System_BE.postman_collection.json`), which fail Zod's
+    // stricter `z.uuid()` — this previously left the Create User form stuck
+    // showing "Select a role." even after a role had been picked.
+    const result = createUserSchema.safeParse({
+      ...base,
+      roleId: "11111111-1111-1111-1111-111111111101",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a missing roleId", () => {
+    const result = createUserSchema.safeParse({ ...base, roleId: "" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message === "Select a role.")).toBe(true);
+    }
   });
 });

@@ -75,4 +75,12 @@ describe("navigation.constants", () => {
     expect(invoicesItem?.implemented).toBe(true);
     expect(billingSection?.requiredRole).toBeUndefined();
   });
+
+  it("marks the Users nav item as implemented, linking to Create User, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const usersItem = adminSection?.items.find((item) => item.label === "Users");
+    expect(usersItem?.implemented).toBe(true);
+    expect(usersItem?.href).toBe("/admin/users/new");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
 });

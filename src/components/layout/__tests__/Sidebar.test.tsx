@@ -66,10 +66,17 @@ describe("Sidebar", () => {
   it("renders not-yet-implemented items as disabled, non-navigating controls", () => {
     renderSidebar(systemAdminUser);
 
-    const usersItem = screen.getByRole("button", { name: /users/i });
-    expect(usersItem).toBeDisabled();
-    expect(usersItem).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("link", { name: /^users$/i })).not.toBeInTheDocument();
+    const currenciesItem = screen.getByRole("button", { name: /currencies/i });
+    expect(currenciesItem).toBeDisabled();
+    expect(currenciesItem).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("link", { name: /^currencies$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the implemented Users item (SystemAdmin) as a real navigation link to Create User", () => {
+    renderSidebar(systemAdminUser);
+
+    const usersLink = screen.getByRole("link", { name: /^users$/i });
+    expect(usersLink).toHaveAttribute("href", "/admin/users/new");
   });
 
   it("renders the implemented Invoices item as a real navigation link", () => {

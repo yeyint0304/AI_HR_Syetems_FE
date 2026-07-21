@@ -26,14 +26,23 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * modules are out of scope for the current feature set) — the `Sidebar`
  * renders those as disabled, clearly-labelled "coming soon" entries instead of
  * dead links that would 404. `Projects`, `Timesheet Periods`, `My Timesheets`,
- * `Timesheet History`, `Reports`, and `Invoices` are implemented (see
+ * `Timesheet History`, `Reports`, `Invoices`, and `Users` are implemented (see
  * `src/app/(dashboard)/projects/*`, `src/app/(dashboard)/timesheet-periods/*`,
  * `src/app/(dashboard)/timesheets/*`, `src/app/(dashboard)/timesheets/history/*`,
- * `src/app/(dashboard)/reports/*`, and `src/app/(dashboard)/invoices/*`).
+ * `src/app/(dashboard)/reports/*`, `src/app/(dashboard)/invoices/*`, and
+ * `src/app/(dashboard)/admin/users/new/*`).
  * `Invoices` has no `requiredRole` at the section level (matching the
  * wireframe, where ProjectAdmin "Sarah Chen" also sees the Billing section),
  * but each `/invoices*` page independently redirects non-SystemAdmin/ProjectAdmin
  * visitors — see `lib/constants/invoice.constants.ts`.
+ *
+ * The wireframe's `/admin/users` is a full "User Management" list (all users,
+ * role badges, an "Add User" button) — but `docs/HR_System_BE.postman_collection.json`
+ * exposes no "list all users" endpoint (only `Auth/CreateUser`, `Auth/GetRoles`,
+ * and `Auth/GetUnassignedUsers`), so that list can't be backed by real data yet.
+ * The "Users" item therefore links straight to the one working piece of that
+ * screen — `/admin/users/new` ("Create User") — and is enabled for SystemAdmin
+ * rather than left disabled, since that page is fully implemented.
  */
 export interface NavItem {
   label: string;
@@ -81,7 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Administration",
     requiredRole: USER_ROLES.SYSTEM_ADMIN,
     items: [
-      { label: "Users", href: "/admin/users", icon: Users, implemented: false },
+      { label: "Users", href: "/admin/users/new", icon: Users, implemented: true },
       { label: "Currencies", href: "/admin/currencies", icon: Coins, implemented: false },
       { label: "Exchange Rates", href: "/admin/exchange-rates", icon: ArrowLeftRight, implemented: false },
       { label: "Rate Cards", href: "/admin/rate-cards", icon: CreditCard, implemented: false },
