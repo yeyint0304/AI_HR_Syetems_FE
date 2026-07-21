@@ -85,5 +85,21 @@ describe("project.validators", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("accepts the backend's seeded, non-RFC-4122-variant ResourceRoleType id (regression: assign-resource 400)", () => {
+      // Per `docs/HR_System_BE.postman_collection.json` ("Assign Resource"),
+      // the seeded ResourceRoleType ids (e.g. this one, "Senior Developer")
+      // don't satisfy `z.uuid()`'s stricter RFC 9562/4122 variant check —
+      // this was turning a valid "Resource role" selection on the Project
+      // Assignments screen into a 400, both client- and server-side (see
+      // `POST /api/projects/[id]/assignments`, which re-validates with this
+      // same schema). `userId`/`resourceRoleTypeId` use the shared lenient
+      // `guidSchema` instead (see `lib/validators/shared.validators.ts`).
+      const result = assignResourceSchema.safeParse({
+        userId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+        resourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+      });
+      expect(result.success).toBe(true);
+    });
   });
 });
