@@ -7,6 +7,7 @@
 import { GET } from "@/app/api/auth/roles/route";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
+import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 
 jest.mock("@/lib/server/backendApiClient", () => ({
   backendApiClient: { get: jest.fn() },
@@ -16,9 +17,25 @@ jest.mock("@/lib/server/authCookies", () => ({
   getAccessToken: jest.fn(),
 }));
 
+jest.mock("@/lib/utils/jwt", () => ({
+  decodeJwt: jest.fn(),
+  mapClaimsToAuthUser: jest.fn(),
+}));
+
 jest.mock("@/lib/utils/logger", () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
+
+const mockSystemAdminClaims = () => {
+  (decodeJwt as jest.Mock).mockReturnValueOnce({});
+  (mapClaimsToAuthUser as jest.Mock).mockReturnValueOnce({
+    id: "user-1",
+    email: "admin@hrsystem.com",
+    firstName: "System",
+    lastName: "Admin",
+    role: "SystemAdmin",
+  });
+};
 
 describe("GET /api/auth/roles", () => {
   beforeEach(() => {
@@ -34,8 +51,36 @@ describe("GET /api/auth/roles", () => {
     expect(backendApiClient.get).not.toHaveBeenCalled();
   });
 
-  it("returns the role list for any authenticated user, unwrapping the backend envelope", async () => {
+  it("401s when the access token can't be decoded into a user", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce("access-token");
+    (decodeJwt as jest.Mock).mockReturnValueOnce(null);
+
+    const response = await GET();
+
+    expect(response.status).toBe(401);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
+  });
+
+  it("403s for an authenticated user who is not SystemAdmin", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce("access-token");
+    (decodeJwt as jest.Mock).mockReturnValueOnce({});
+    (mapClaimsToAuthUser as jest.Mock).mockReturnValueOnce({
+      id: "user-2",
+      email: "user@hrsystem.com",
+      firstName: "Regular",
+      lastName: "User",
+      role: "User",
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(403);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
+  });
+
+  it("returns the role list for a SystemAdmin, unwrapping the backend envelope", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce("access-token");
+    mockSystemAdminClaims();
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
       data: {
         StatusCode: 200,
@@ -80,6 +125,7 @@ describe("GET /api/auth/roles", () => {
 
   it("returns a 502 fallback when the backend call itself fails", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce("access-token");
+    mockSystemAdminClaims();
     (backendApiClient.get as jest.Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 500, data: {} },
