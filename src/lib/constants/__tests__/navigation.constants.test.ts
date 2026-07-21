@@ -10,6 +10,10 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/timesheet-periods/new")).toBe("New timesheet period");
       expect(getBreadcrumbLabel("/timesheets")).toBe("My Timesheets");
       expect(getBreadcrumbLabel("/timesheets/history")).toBe("Timesheet History");
+      expect(getBreadcrumbLabel("/reports")).toBe("Reports");
+      expect(getBreadcrumbLabel("/reports/timesheet")).toBe("Timesheet Report");
+      expect(getBreadcrumbLabel("/reports/roles-summary")).toBe("User Roles Summary");
+      expect(getBreadcrumbLabel("/reports/cost-revenue")).toBe("Cost & Revenue Report");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -51,5 +55,11 @@ describe("navigation.constants", () => {
     const timesheetSection = NAV_SECTIONS.find((section) => section.label === "Timesheet");
     const historyItem = timesheetSection?.items.find((item) => item.href === "/timesheets/history");
     expect(historyItem?.implemented).toBe(true);
+  });
+
+  it("marks the Reports nav item as implemented", () => {
+    const reportsSection = NAV_SECTIONS.find((section) => section.label === "Reports");
+    const reportsItem = reportsSection?.items.find((item) => item.href === "/reports");
+    expect(reportsItem?.implemented).toBe(true);
   });
 });
