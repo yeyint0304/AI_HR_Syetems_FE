@@ -29,9 +29,9 @@ import {
   WEEKDAY_LABELS,
   addDaysToDateOnly,
   compareDateOnly,
-  formatDateOnly,
   formatShortDate,
   formatWeekRangeLabel,
+  getTodayDateOnly,
   getWeekDates,
   getWeekStart,
   isDateOnlyInRange,
@@ -77,7 +77,7 @@ function formatPeriodOptionLabel(period: TimesheetPeriod): string {
 /** Picks a sensible default period: one covering today, else the most recently started one. */
 function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | null {
   if (periods.length === 0) return null;
-  const today = formatDateOnly(new Date());
+  const today = getTodayDateOnly();
   const current = periods.find((period) => isDateOnlyInRange(today, period.periodStart, period.periodEnd));
   if (current) return current;
 
@@ -85,7 +85,7 @@ function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | nul
 }
 
 function resolveDefaultWeekStart(period: TimesheetPeriod): string {
-  const today = formatDateOnly(new Date());
+  const today = getTodayDateOnly();
   const anchor = isDateOnlyInRange(today, period.periodStart, period.periodEnd) ? today : period.periodStart;
   return getWeekStart(anchor);
 }

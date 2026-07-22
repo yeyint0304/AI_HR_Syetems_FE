@@ -75,41 +75,51 @@ function sumHours(entries: TimesheetEntry[]): number {
  * this view broadens its scope from "my history" to every user's entries (the
  * backend's `GetAllTimesheetEntries` already supports this — see
  * `app/api/timesheet-entries/route.ts`) and adds a "User" column plus
- * "Approve"/"Reject" actions on other users' pending entries, calling
+ * "Approve"/"Reject" actions on pending entries, calling
  * `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`. This
  * is the review/approval step `INV-01` ("Includes approved entries only" —
  * `docs/HR_System_User_Stories_Backlog.xlsx`) depends on before an entry can
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
- * treated as irreversible from this UI (confirmed via `ConfirmDialog`) and a
- * manager's *own* pending entries keep the regular Edit action instead of
- * Approve/Reject, avoiding a self-approval workflow the backlog never
- * describes.
+ * treated as irreversible from this UI (confirmed via `ConfirmDialog`).
  *
- * Per row, for a still-pending (`!isApproved`) entry, exactly one of three
- * things renders in the Actions column, and the difference is driven purely
- * by ownership + role + the entry's period lock state (`isEntryEditable`),
- * never by anything else:
- *   - **Edit** — shown only when it's the signed-in user's *own* entry and
- *     `isEntryEditable` (pending and its period isn't locked).
- *   - **Approve/Reject** — shown only for a manager (`canApprove`) viewing
- *     *someone else's* entry, and only while that same `isEntryEditable`
- *     check passes. Reusing `isEntryEditable` here (rather than a bare
- *     `!entry.isApproved` check) is deliberate: once a timesheet period is
- *     locked, every entry inside it — regardless of whose it is — should
- *     freeze the same way Edit already does, so Approve/Reject can't act on
- *     an entry whose period a manager has since locked.
- *   - **Locked** — everything else (an approved entry, a locked-period
- *     entry, or another user's entry viewed by a non-manager, who never
- *     reaches this row at all since the entries query is scoped to their
- *     own `userId`).
+ * Per row, for a still-pending (`!isApproved`) entry whose period isn't
+ * locked (`isEntryEditable`), the Actions column renders *every* action the
+ * signed-in user is entitled to for that entry — ownership and role are
+ * independent, non-exclusive gates, not an either/or choice:
+ *   - **Edit** — shown whenever it's the signed-in user's *own* entry.
+ *   - **Approve** / **Reject** — shown whenever the signed-in user is a
+ *     manager (`canApprove`), regardless of whose entry it is — including
+ *     their own. A manager who owns a still-pending, unlocked entry
+ *     therefore sees Edit *and* Approve/Reject together on that row.
+ *   - **Locked** — shown instead of the above whenever neither gate applies
+ *     (an approved entry, a locked-period entry, or — for a non-manager —
+ *     another user's entry, who never reaches this row at all since the
+ *     entries query is scoped to their own `userId`).
+ *
+ * `isEntryEditable` gates all of the above: once a timesheet period is
+ * locked, every entry inside it — regardless of whose it is — freezes to
+ * "Locked", so neither Edit nor Approve/Reject can act on an entry whose
+ * period has since been locked.
+ *
+ * Self-approval is intentionally permitted, not an oversight: this is a
+ * deliberate product decision (see the `bugs/timesheet-history` feature
+ * request), and it is *consistent* with the backend contract rather than a
+ * new capability layered on top of it — `TimesheetEntry/ApproveTimesheetEntry`
+ * is documented as `[Auth]`-only with no ownership restriction, and
+ * `canManageAnyTimesheetEntry` (`lib/constants/timesheetEntry.constants.ts`)
+ * already grants a SystemAdmin/ProjectAdmin authority over *any* user's
+ * entries, their own included. `app/api/timesheet-entries/[id]/approve/route.ts`
+ * enforces this server-side (entry-existence + already-approved checks
+ * mirroring the ownership-fetch pattern in the sibling `PUT`/`DELETE`
+ * routes) so the rule holds regardless of what this UI renders, not only
+ * because the UI happens to show these buttons.
  *
  * "Reject" (`useRejectTimesheetEntry`) sends a pending entry back for
  * correction. The backend's Timesheet Entry module documents no dedicated
  * reject/deny endpoint, only Approve and Delete, so rejection is implemented
  * as a delete of the pending entry (see `rejectTimesheetEntryRequest` for the
  * full rationale) — the employee re-logs the time on `/timesheets` if still
- * needed. Like Approve, Reject is confirmed via `ConfirmDialog` and is only
- * offered for other users' still-pending entries, never a manager's own.
+ * needed. Like Approve, Reject is confirmed via `ConfirmDialog`.
  */
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
@@ -534,35 +544,40 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                               Save
                             </Button>
                           </div>
-                        ) : own && editable ? (
-                          <button
-                            type="button"
-                            onClick={() => startEdit(entry)}
-                            className="inline-flex items-center gap-1 rounded text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                          >
-                            <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
-                            Edit
-                          </button>
-                        ) : !own && canApprove && editable ? (
-                          <div className="flex justify-end gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setPendingApproveEntry(entry)}
-                              disabled={approveMutation.isPending || rejectMutation.isPending}
-                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
-                            >
-                              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPendingRejectEntry(entry)}
-                              disabled={approveMutation.isPending || rejectMutation.isPending}
-                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                            >
-                              <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
-                              Reject
-                            </button>
+                        ) : editable && (own || canApprove) ? (
+                          <div className="flex flex-wrap justify-end gap-3">
+                            {own && (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(entry)}
+                                className="inline-flex items-center gap-1 rounded text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                              >
+                                <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+                                Edit
+                              </button>
+                            )}
+                            {canApprove && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingApproveEntry(entry)}
+                                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
+                                >
+                                  <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingRejectEntry(entry)}
+                                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                                >
+                                  <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
+                                  Reject
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400">

@@ -353,14 +353,110 @@ describe("TimesheetHistoryView", () => {
       mockApi({ entries: [PENDING_ENTRY, OTHER_USER_PENDING_ENTRY] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
 
-      await screen.findByRole("table");
+      const table = await screen.findByRole("table");
 
       expect(screen.getByRole("columnheader", { name: /^user$/i })).toBeInTheDocument();
       expect(screen.getByText("Alex Kumar")).toBeInTheDocument();
-      // Own pending entry still gets the regular Edit action, not Approve/Reject.
+
+      const otherUsersRow = within(table).getByText("Alex Kumar").closest("tr");
+      if (!otherUsersRow) throw new Error("Could not find Alex Kumar's row");
+      // Someone else's pending entry: Approve/Reject only, no Edit (it isn't the manager's own entry).
+      expect(within(otherUsersRow).getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+      expect(within(otherUsersRow).getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+      expect(within(otherUsersRow).queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Edit, Approve, and Reject together for the manager's own pending entry", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // A manager's own still-pending, unlocked entry: ownership grants Edit
+      // and the manager role independently grants Approve/Reject — both
+      // render together on the same row rather than one excluding the other.
       expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+    });
+
+    it("allows a manager to approve their own pending entry (self-approval) after confirming the dialog", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { message: "Timesheet entry approved successfully." } });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${PENDING_ENTRY_ID}/approve`)
+      );
+      expect(await screen.findByText(/approved successfully/i)).toBeInTheDocument();
+    });
+
+    it("allows a manager to reject their own pending entry (self-rejection) after confirming the dialog", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^reject$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^reject$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.delete).toHaveBeenCalledWith(`/timesheet-entries/${PENDING_ENTRY_ID}`)
+      );
+      expect(await screen.findByText(/timesheet entry rejected/i)).toBeInTheDocument();
+    });
+
+    it("still allows editing the manager's own entry via Edit even though Approve/Reject render on the same row", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+
+      expect(await screen.findByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
+      // While editing, the row swaps to Save/Cancel — Approve/Reject aren't
+      // shown mid-edit for that row.
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Locked (not Edit/Approve/Reject) for the manager's own already-approved entry", async () => {
+      const ownApprovedEntry = { ...PENDING_ENTRY, isApproved: true };
+      mockApi({ entries: [ownApprovedEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // Even though the manager owns this entry, an already-approved entry is
+      // never actionable — ownership/role gates only apply while `editable`.
+      expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("shows Locked (not Edit/Approve/Reject) for the manager's own entry whose period is locked", async () => {
+      const ownLockedPeriodEntry = { ...PENDING_ENTRY, timesheetPeriodId: LOCKED_PERIOD_ID };
+      mockApi({ periods: [PERIOD, LOCKED_PERIOD], entries: [ownLockedPeriodEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // Same reasoning as the already-approved case: a locked period freezes
+      // the row regardless of the manager also being the entry's owner.
+      expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
     });
 
     it("approves another user's pending entry after confirming the dialog", async () => {

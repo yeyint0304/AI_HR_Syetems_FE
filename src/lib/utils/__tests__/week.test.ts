@@ -3,6 +3,7 @@ import {
   clampDateOnly,
   compareDateOnly,
   formatWeekRangeLabel,
+  getTodayDateOnly,
   getWeekDates,
   getWeekStart,
   isDateOnlyInRange,
@@ -70,6 +71,33 @@ describe("week utils", () => {
       expect(isDateOnlyInRange("2025-01-01", "2025-01-01", "2025-01-31")).toBe(true);
       expect(isDateOnlyInRange("2025-01-31", "2025-01-01", "2025-01-31")).toBe(true);
       expect(isDateOnlyInRange("2025-02-01", "2025-01-01", "2025-01-31")).toBe(false);
+    });
+  });
+
+  describe("getTodayDateOnly", () => {
+    const originalTZ = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTZ;
+      jest.useRealTimers();
+    });
+
+    // Only one TZ reassignment per test file: Node's timezone lookup is
+    // process-wide, and reassigning `process.env.TZ` a second time within
+    // the same process was observed to no longer take effect reliably —
+    // so this single case covers the regression rather than risking a
+    // flaky second scenario.
+    it("returns the user's local calendar date, not the UTC calendar date", () => {
+      // UTC+14 (always ahead of UTC) — at 23:30 UTC, local time has already
+      // rolled over into the next calendar day. Regression test for the bug
+      // where `MyTimesheetView` derived "today" via `formatDateOnly(new
+      // Date())`, which goes through `toISOString()` (UTC) and would report
+      // the *previous* day for users east of UTC (e.g. Singapore, UTC+8) for
+      // the first several hours of every local day.
+      process.env.TZ = "Pacific/Kiritimati";
+      jest.useFakeTimers().setSystemTime(new Date("2025-02-24T23:30:00Z"));
+
+      expect(getTodayDateOnly()).toBe("2025-02-25");
     });
   });
 

@@ -2,12 +2,55 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
-import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/timesheetEntryResponseMappers";
+import {
+  mapBackendTimesheetEntry,
+  readBackendEnvelope,
+  resolveEnvelopeFailure,
+} from "@/lib/server/timesheetEntryResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
+import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+type EntryLookupResult =
+  | { ok: true; entry: TimesheetEntry }
+  | { ok: false; response: NextResponse };
+
+/**
+ * Fetches the entry being approved so it can be validated *before* calling
+ * the backend's approve endpoint — mirroring the `fetchOwnedEntry` pattern in
+ * the sibling `app/api/timesheet-entries/[id]/route.ts` (`PUT`/`DELETE`).
+ *
+ * Unlike that sibling helper, this deliberately does **not** reject the
+ * request when `entry.userId !== currentUser.id`: a SystemAdmin/ProjectAdmin
+ * (the only roles that reach this point — see the role check in `PUT` below)
+ * is intentionally allowed to approve *any* user's entry, including their
+ * own. See the "Self-approval is intentionally permitted" note in
+ * `components/timesheets/TimesheetHistoryView.tsx` for the full rationale.
+ * This fetch's job is narrower: confirm the entry actually exists and surface
+ * a clean 404/409 instead of forwarding a raw backend error for an id that
+ * was never valid to begin with.
+ */
+async function fetchEntryForApproval(id: string, accessToken: string): Promise<EntryLookupResult> {
+  const response = await backendApiClient.get(`/TimesheetEntry/GetTimesheetEntryById/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const envelope = readBackendEnvelope(response.data);
+  if (!envelope.isSuccess) {
+    const { status, message } = resolveEnvelopeFailure(envelope, "Timesheet entry not found.", 404);
+    return { ok: false, response: NextResponse.json({ message }, { status }) };
+  }
+
+  const entry = mapBackendTimesheetEntry(envelope.data);
+  if (!entry) {
+    return { ok: false, response: NextResponse.json({ message: "Timesheet entry not found." }, { status: 404 }) };
+  }
+
+  return { ok: true, entry };
 }
 
 /**
@@ -22,6 +65,14 @@ interface RouteParams {
  * on any user's entries ... for review/approval workflows built on top of
  * this data later"). Approval also gates `INV-01` ("Includes approved
  * entries only") in `docs/HR_System_User_Stories_Backlog.xlsx`.
+ *
+ * Before calling the backend, `fetchEntryForApproval` confirms the entry
+ * exists and is still pending (see that function's doc comment for why this
+ * deliberately does not add an ownership restriction — a manager approving
+ * their *own* pending entry is an intentional, explicitly requested
+ * capability, not a gap): this gives a clean 404 for an unknown id and a 409
+ * for a double-approve attempt without relying on the backend's raw error
+ * shape for either case.
  *
  * The backend's saved success example only returns
  * `{ Id, IsApproved, ApprovedAt, ApprovedBy }` — not the full entry shape
@@ -58,6 +109,16 @@ export async function PUT(_request: Request, { params }: RouteParams) {
   }
 
   try {
+    const lookup = await fetchEntryForApproval(id, accessToken);
+    if (!lookup.ok) return lookup.response;
+
+    if (lookup.entry.isApproved) {
+      return NextResponse.json(
+        { message: "This timesheet entry has already been approved." },
+        { status: 409 }
+      );
+    }
+
     const response = await backendApiClient.put(
       `/TimesheetEntry/ApproveTimesheetEntry/${id}`,
       null,
