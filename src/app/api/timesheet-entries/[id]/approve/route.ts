@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/timesheetEntryResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
+import { canManagerActOnProjectEntry } from "@/lib/server/timesheetEntryAuthorization";
 import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 
 interface RouteParams {
@@ -81,6 +82,12 @@ async function fetchEntryForApproval(id: string, accessToken: string): Promise<E
  * `UpdateTimesheetEntry` — no updated record is returned here; the client
  * refetches the list (`useApproveTimesheetEntry`'s cache invalidation
  * handles this).
+ *
+ * On top of the role check above, approving *someone else's* entry additionally
+ * requires `canManagerActOnProjectEntry` (`lib/server/timesheetEntryAuthorization.ts`)
+ * — a `ProjectAdmin` must be an assigned resource on that entry's project (the
+ * `bugs/timesheet-history` "own project (assigned user)" rule); `SystemAdmin`
+ * is exempt. Self-approval never triggers this extra check.
  */
 export async function PUT(_request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -111,6 +118,22 @@ export async function PUT(_request: Request, { params }: RouteParams) {
   try {
     const lookup = await fetchEntryForApproval(id, accessToken);
     if (!lookup.ok) return lookup.response;
+
+    // "Own project (assigned user)" gate: a ProjectAdmin approving *someone
+    // else's* entry must be an assigned resource on that entry's project (see
+    // `lib/server/timesheetEntryAuthorization.ts` for the full rationale).
+    // Self-approval is always allowed regardless — see this route's doc
+    // comment and `TimesheetHistoryView.tsx`'s "Self-approval is
+    // intentionally permitted" note.
+    if (
+      lookup.entry.userId !== currentUser.id &&
+      !(await canManagerActOnProjectEntry(currentUser, lookup.entry.projectId, accessToken))
+    ) {
+      return NextResponse.json(
+        { message: "You do not have permission to approve timesheet entries for this project." },
+        { status: 403 }
+      );
+    }
 
     if (lookup.entry.isApproved) {
       return NextResponse.json(

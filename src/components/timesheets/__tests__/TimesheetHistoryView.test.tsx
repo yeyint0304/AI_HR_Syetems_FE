@@ -111,13 +111,24 @@ interface MockOptions {
   periods?: unknown[];
   projects?: unknown[];
   entries?: unknown[];
+  /** Maps a projectId to its `ProjectAssignment[]` for `/projects/:id/assignments` (used by the ProjectAdmin project-scoping gate). */
+  assignments?: Record<string, unknown[]>;
 }
 
-function mockApi({ periods = [PERIOD], projects = [PROJECT, OTHER_PROJECT], entries = [] }: MockOptions = {}) {
+function mockApi({
+  periods = [PERIOD],
+  projects = [PROJECT, OTHER_PROJECT],
+  entries = [],
+  assignments = {},
+}: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
     if (url === "/projects") return Promise.resolve({ data: { data: projects } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
+    const assignmentsMatch = url.match(/^\/projects\/(.+)\/assignments$/);
+    if (assignmentsMatch) {
+      return Promise.resolve({ data: { data: assignments[assignmentsMatch[1]] ?? [] } });
+    }
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
 }
@@ -330,10 +341,10 @@ describe("TimesheetHistoryView", () => {
     );
   });
 
-  describe("as a manager (ProjectAdmin/SystemAdmin)", () => {
+  describe("as a manager (SystemAdmin — unrestricted, not project-scoped)", () => {
     beforeEach(() => {
       useAuthStore.setState({
-        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.SYSTEM_ADMIN },
       });
     });
 
@@ -576,6 +587,84 @@ describe("TimesheetHistoryView", () => {
 
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
       expect(apiClient.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("as a project-scoped manager (ProjectAdmin — 'own project (assigned user)' gate)", () => {
+    beforeEach(() => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "pm@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+      });
+    });
+
+    it("shows Approve/Reject for another user's pending entry on a project the ProjectAdmin is assigned to", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      expect(await screen.findByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+    });
+
+    it("shows Locked (no Approve/Reject) for another user's pending entry on a project the ProjectAdmin is NOT assigned to", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [] }, // ProjectAdmin is not an assigned resource on this project
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("still shows Edit (but not Approve/Reject) for the ProjectAdmin's own pending entry on an unassigned project", async () => {
+      mockApi({
+        entries: [PENDING_ENTRY], // owned by CURRENT_USER_ID, projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      expect(await screen.findByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+    });
+
+    it("approves another user's pending entry on an assigned project after confirming the dialog", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY],
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { message: "Timesheet entry approved successfully." } });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${OTHER_USER_PENDING_ENTRY.id}/approve`)
+      );
+    });
+
+    it("requests assignments only for the distinct projects present in the visible entries", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(`/projects/${PROJECT_ID}/assignments`)
+      );
+      expect(apiClient.get).not.toHaveBeenCalledWith(`/projects/${OTHER_PROJECT_ID}/assignments`);
     });
   });
 });

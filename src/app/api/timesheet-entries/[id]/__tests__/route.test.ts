@@ -39,6 +39,23 @@ const otherUserId = "84e4be46-3d9f-4e86-ab08-74d8837958b9";
 
 const userToken = buildToken({ sub: selfUserId, email: "user@hrsystem.com", role: "User" });
 const adminToken = buildToken({ sub: "admin-1", email: "admin@hrsystem.com", role: "SystemAdmin" });
+const projectAdminToken = buildToken({ sub: "manager-1", email: "pm@hrsystem.com", role: "ProjectAdmin" });
+
+/** Response for the `Project/GetProjectAssignments/{projectId}` lookup `canManagerActOnProjectEntry` performs. */
+function assignmentsEnvelope(assignments: Array<{ userId: string }>) {
+  return {
+    data: {
+      StatusCode: 200,
+      IsSuccess: true,
+      Message: "Success",
+      Data: assignments.map((assignment, index) => ({
+        Id: `assignment-${index}`,
+        UserId: assignment.userId,
+        ResourceRoleTypeId: "role-1",
+      })),
+    },
+  };
+}
 
 function routeParams(id: string) {
   return { params: Promise.resolve({ id }) };
@@ -195,6 +212,38 @@ describe("PUT /api/timesheet-entries/[id]", () => {
     expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 
+  it("403s when a ProjectAdmin edits another user's entry on a project they are not assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(assignmentsEnvelope([])); // not an assigned resource
+
+    const response = await PUT(putRequest(validUpdatePayload), routeParams("1"));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.message).toMatch(/do not have permission/i);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("allows a ProjectAdmin to edit another user's entry on a project they are assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
+    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Timesheet entry updated successfully.", Data: null },
+    });
+
+    const response = await PUT(
+      putRequest(validUpdatePayload),
+      routeParams("b365fa4d-6a30-4c5b-ae33-6161d9f81328")
+    );
+
+    expect(response.status).toBe(200);
+    expect(backendApiClient.put).toHaveBeenCalled();
+  });
+
   it("updates the entry after confirming ownership", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce(ownEntryEnvelope());
@@ -275,6 +324,38 @@ describe("DELETE /api/timesheet-entries/[id]", () => {
     expect(response.status).toBe(409);
     expect(body.message).toMatch(/cannot be deleted/i);
     expect(backendApiClient.delete).not.toHaveBeenCalled();
+  });
+
+  it("403s when a ProjectAdmin rejects (deletes) another user's entry on a project they are not assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(assignmentsEnvelope([])); // not an assigned resource
+
+    const response = await DELETE(new Request("http://localhost/api/timesheet-entries/1"), routeParams("1"));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.message).toMatch(/do not have permission/i);
+    expect(backendApiClient.delete).not.toHaveBeenCalled();
+  });
+
+  it("allows a ProjectAdmin to reject (delete) another user's entry on a project they are assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
+    (backendApiClient.delete as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Timesheet entry deleted successfully.", Data: null },
+    });
+
+    const response = await DELETE(
+      new Request("http://localhost/api/timesheet-entries/1"),
+      routeParams("b365fa4d-6a30-4c5b-ae33-6161d9f81328")
+    );
+
+    expect(response.status).toBe(204);
+    expect(backendApiClient.delete).toHaveBeenCalled();
   });
 
   it("deletes the entry and returns 204 after confirming ownership", async () => {

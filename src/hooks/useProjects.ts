@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   assignResourceRequest,
   createProjectRequest,
@@ -79,6 +79,31 @@ export function useProjectAssignments(projectId: string) {
     queryKey: assignmentsQueryKey(projectId),
     queryFn: () => getProjectAssignmentsRequest(projectId),
     enabled: Boolean(projectId),
+  });
+}
+
+/**
+ * Fetches project assignments for several projects at once, one parallel
+ * query per distinct project id (via `useQueries`), sharing the exact same
+ * cache entries as `useProjectAssignments` above (identical `assignmentsQueryKey`).
+ *
+ * Backs `TimesheetHistoryView`'s "own project (assigned user)" gate on the
+ * Approve/Reject actions (see that component's doc comment and
+ * `lib/constants/timesheetEntry.constants.ts#isProjectScopedTimesheetManager`):
+ * a ProjectAdmin reviewing entries across many projects needs to know, for
+ * each distinct project appearing in the list, whether they're an assigned
+ * resource on it. `docs/HR_System_BE.postman_collection.json` has no batched
+ * "assignments for many projects" endpoint — only the per-project
+ * `Project/GetProjectAssignments/{projectId}` — so this fans out one request
+ * per distinct project id rather than inventing a backend-unsupported one.
+ */
+export function useProjectAssignmentsForProjects(projectIds: string[]) {
+  return useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: assignmentsQueryKey(projectId),
+      queryFn: () => getProjectAssignmentsRequest(projectId),
+      enabled: Boolean(projectId),
+    })),
   });
 }
 

@@ -45,6 +45,28 @@ const projectAdminToken = buildToken({
   role: "ProjectAdmin",
 });
 
+const systemAdminToken = buildToken({
+  sub: "sysadmin-1",
+  email: "sysadmin@hrsystem.com",
+  role: "SystemAdmin",
+});
+
+/** Response for the `Project/GetProjectAssignments/{projectId}` lookup `canManagerActOnProjectEntry` performs. */
+function assignmentsEnvelope(assignments: Array<{ userId: string }>) {
+  return {
+    data: {
+      StatusCode: 200,
+      IsSuccess: true,
+      Message: "Success",
+      Data: assignments.map((assignment, index) => ({
+        Id: `assignment-${index}`,
+        UserId: assignment.userId,
+        ResourceRoleTypeId: "role-1",
+      })),
+    },
+  };
+}
+
 /**
  * Mocks the `GetTimesheetEntryById` lookup `fetchEntryForApproval` performs
  * before approving. Defaults to a still-pending entry owned by `manager-1`
@@ -169,9 +191,12 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
   });
 
-  it("allows a manager to approve another user's still-pending entry and returns 200 on success", async () => {
+  it("allows a manager assigned to the project to approve another user's still-pending entry and returns 200 on success", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     mockEntryLookup({ UserId: "employee-9" });
+    // `canManagerActOnProjectEntry`'s assignments lookup — `manager-1` is an
+    // assigned resource on `project-1` (the entry's project).
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
     (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
       data: {
         StatusCode: 200,
@@ -189,6 +214,45 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
 
     expect(response.status).toBe(200);
     expect(body.message).toBe("Timesheet entry approved successfully.");
+  });
+
+  it("403s a ProjectAdmin approving another user's entry on a project they are not assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup({ UserId: "employee-9" });
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(assignmentsEnvelope([])); // not assigned
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.message).toMatch(/do not have permission/i);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("allows a SystemAdmin to approve another user's entry regardless of project assignment", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
+    mockEntryLookup({ UserId: "employee-9" });
+    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Timesheet entry approved successfully.",
+        Data: { Id: "1", IsApproved: true, ApprovedAt: "2026-06-22T05:18:00Z", ApprovedBy: "sysadmin-1" },
+      },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+
+    expect(response.status).toBe(200);
+    // SystemAdmin is exempt from project scoping, so no assignments lookup
+    // is performed — only the one `GetTimesheetEntryById` call from `mockEntryLookup`.
+    expect(backendApiClient.get).toHaveBeenCalledTimes(1);
   });
 
   it("forwards the backend's message for an expected 4xx logical failure from the approve call itself", async () => {

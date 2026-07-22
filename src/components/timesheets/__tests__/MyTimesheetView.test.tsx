@@ -8,6 +8,17 @@ jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
 
+// `MyTimesheetView` only allows logging/editing hours for the *present* day
+// (see `isCellLocked` — the `bugs/timesheet-history` "present day only" fix).
+// Pinning `getTodayDateOnly()` to the Monday fixture date below keeps every
+// existing test's "editable Monday cell" assumption intact regardless of the
+// real wall-clock date the suite happens to run on, while still exercising
+// the real `isCellLocked`/`isDateOnlyInRange` logic for every other date.
+jest.mock("@/lib/utils/week", () => ({
+  ...jest.requireActual("@/lib/utils/week"),
+  getTodayDateOnly: () => "2025-01-06",
+}));
+
 function renderWithClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: 0 }, queries: { retry: false } },
@@ -25,6 +36,7 @@ const LOCKED_PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af03";
 const PROJECT_ID = "3fa85f64-5717-4562-b3fc-2c963f66af04";
 const MONDAY_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af05";
 const APPROVED_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af06";
+const TUESDAY_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af13";
 
 // 2025-01-06 is a Monday, so the default-selected week aligns exactly with
 // this period's start (see `resolveDefaultWeekStart` in MyTimesheetView).
@@ -76,6 +88,21 @@ const APPROVED_ENTRY = {
   hours: 5,
   taskDescription: "Approved work",
   isApproved: true,
+};
+
+// Still-pending, unlocked-period entry — but *not* on today's mocked date
+// (2025-01-06), so it should render read-only per the "present day only" rule.
+const TUESDAY_ENTRY = {
+  id: TUESDAY_ENTRY_ID,
+  userId: CURRENT_USER_ID,
+  projectId: PROJECT_ID,
+  projectCode: "PRJ-ALPHA",
+  projectName: "Project Alpha",
+  timesheetPeriodId: PERIOD_ID,
+  entryDate: "2025-01-07",
+  hours: 4,
+  taskDescription: "Yesterday's-view work",
+  isApproved: false,
 };
 
 interface MockOptions {
@@ -138,6 +165,36 @@ describe("MyTimesheetView", () => {
 
     const mondayInput = await screen.findByLabelText(/Project Alpha hours on Jan 6/i);
     expect(mondayInput).toHaveValue(6);
+  });
+
+  it("shows an info notice that only today's hours can be logged or edited", async () => {
+    mockApi({ entries: [MONDAY_ENTRY] });
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    expect(await screen.findByText(/you can only log or edit hours for today/i)).toBeInTheDocument();
+  });
+
+  it("renders a still-pending entry on a non-today date as read-only", async () => {
+    mockApi({ entries: [TUESDAY_ENTRY] });
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    const tuesdayInput = await screen.findByLabelText(/Project Alpha hours on Jan 7/i);
+    expect(tuesdayInput).toBeDisabled();
+    expect(tuesdayInput).toHaveValue(4);
+  });
+
+  it("does not create a new entry for a non-today, previously-empty cell on Save All", async () => {
+    mockApi({ entries: [] });
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    const tuesdayInput = await screen.findByLabelText(/Project Alpha hours on Jan 7/i);
+    expect(tuesdayInput).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /^save all$/i }));
+
+    await waitFor(() => expect(screen.getByText(/nothing to save/i)).toBeInTheDocument());
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("renders an approved entry as read-only instead of an editable input", async () => {

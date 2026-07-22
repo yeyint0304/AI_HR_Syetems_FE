@@ -112,6 +112,16 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * only `Project/GetProjectList` (all projects) and per-project assignment
  * lookups. This view therefore lists every *active* project as loggable,
  * which is a reasonable default until a user-scoped project list exists.
+ *
+ * Per the `bugs/timesheet-history` feature request ("In My Timesheet can
+ * update date just for present day"): only the *current* calendar day
+ * (`getTodayDateOnly`) is ever loggable/editable in the weekly grid, in
+ * addition to the existing locked-period/approved/out-of-range checks below
+ * — see `isCellLocked`. Past days become read-only once the day has passed
+ * (their previously-saved hours still render, just disabled) and future days
+ * cannot be logged in advance. This applies uniformly to create, update, and
+ * delete (clearing hours), since all three share the same per-cell lock gate
+ * and `handleSaveAll` skips locked cells outright.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const {
@@ -258,7 +268,9 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     if (!selectedPeriod) return true;
     if (selectedPeriod.isLocked) return true;
     if (!isDateOnlyInRange(date, selectedPeriod.periodStart, selectedPeriod.periodEnd)) return true;
-    return Boolean(baseline?.isApproved);
+    if (Boolean(baseline?.isApproved)) return true;
+    // Only today's date is loggable/editable — see the component doc comment.
+    return date !== getTodayDateOnly();
   }
 
   async function handleSaveAll() {
@@ -419,6 +431,11 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       {saveSuccess && <Alert variant="success">{saveSuccess}</Alert>}
       {selectedPeriod?.isLocked && (
         <Alert variant="info">This timesheet period is locked. Entries cannot be added or changed.</Alert>
+      )}
+      {selectedPeriod && !selectedPeriod.isLocked && (
+        <Alert variant="info">
+          You can only log or edit hours for today, {formatShortDate(getTodayDateOnly())}. Other days are read-only.
+        </Alert>
       )}
 
       <div className="max-w-xs">

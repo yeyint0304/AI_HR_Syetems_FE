@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
@@ -23,6 +23,7 @@ import {
 import {
   canManageAnyTimesheetEntry,
   ENTRY_HOURS_STEP,
+  isProjectScopedTimesheetManager,
   MAX_ENTRY_HOURS,
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
@@ -86,15 +87,37 @@ function sumHours(entries: TimesheetEntry[]): number {
  * locked (`isEntryEditable`), the Actions column renders *every* action the
  * signed-in user is entitled to for that entry — ownership and role are
  * independent, non-exclusive gates, not an either/or choice:
- *   - **Edit** — shown whenever it's the signed-in user's *own* entry.
+ *   - **Edit** — shown whenever it's the signed-in user's *own* entry,
+ *     regardless of project assignment (logging/editing your own work is
+ *     never project-scoped).
  *   - **Approve** / **Reject** — shown whenever the signed-in user is a
- *     manager (`canApprove`), regardless of whose entry it is — including
- *     their own. A manager who owns a still-pending, unlocked entry
- *     therefore sees Edit *and* Approve/Reject together on that row.
- *   - **Locked** — shown instead of the above whenever neither gate applies
- *     (an approved entry, a locked-period entry, or — for a non-manager —
- *     another user's entry, who never reaches this row at all since the
- *     entries query is scoped to their own `userId`).
+ *     manager (`canApprove`) *and* is authorized to act on that entry's
+ *     project (`canManageEntryProject`, below) — including their own entry.
+ *     A manager who owns a still-pending, unlocked entry therefore sees Edit
+ *     *and* Approve/Reject together on that row (assuming they're also
+ *     authorized for its project).
+ *   - **Locked** — shown instead of the above whenever no gate applies (an
+ *     approved entry, a locked-period entry, a non-manager viewing another
+ *     user's entry — who never reaches this row at all since the entries
+ *     query is scoped to their own `userId` — or, per the
+ *     `bugs/timesheet-history` feature request "if not his own project (not
+ *     assign user) then don't add any action for it", a `ProjectAdmin`
+ *     reviewing an entry for a project they are *not* assigned to).
+ *
+ * **Project-assignment scope for Approve/Reject** (`canManageEntryProject`):
+ * a `ProjectAdmin` (`isProjectScopedTimesheetManager`, per
+ * `lib/constants/timesheetEntry.constants.ts`) may only Approve/Reject
+ * entries for projects they are an assigned resource on
+ * (`Project/GetProjectAssignments`, fetched in bulk for every distinct
+ * project in the visible list via `useProjectAssignmentsForProjects`) —
+ * outside those projects they get no action at all on someone else's entry,
+ * even though they still see the row (for organization-wide visibility).
+ * `SystemAdmin` is exempt from this scoping and can Approve/Reject anything,
+ * consistent with its unrestricted authority elsewhere in this app (e.g.
+ * `ADMIN_ROUTE_PREFIX`). While the per-project assignment queries are still
+ * loading, `canManageEntryProject` conservatively returns `false` (fails
+ * closed to "Locked") rather than flashing Approve/Reject buttons that might
+ * immediately disappear once the real assignment data arrives.
  *
  * `isEntryEditable` gates all of the above: once a timesheet period is
  * locked, every entry inside it — regardless of whose it is — freezes to
@@ -124,6 +147,10 @@ function sumHours(entries: TimesheetEntry[]): number {
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
   const canApprove = canManageAnyTimesheetEntry(user?.role);
+  // Only a `ProjectAdmin` is narrowed to their assigned projects; `SystemAdmin`
+  // keeps unrestricted Approve/Reject authority (see the component doc
+  // comment's "Project-assignment scope for Approve/Reject" section).
+  const isProjectScopedManager = canApprove && isProjectScopedTimesheetManager(user?.role);
 
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -184,6 +211,35 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     return map;
   }, [periods]);
 
+  // Distinct project ids across every fetched entry — only computed for a
+  // project-scoped manager (a `ProjectAdmin`); a plain `User` never sees
+  // Approve/Reject at all, and `SystemAdmin` isn't scoped, so neither needs
+  // this extra round trip.
+  const managedEntryProjectIds = useMemo(() => {
+    if (!isProjectScopedManager || !entries) return [];
+    return Array.from(new Set(entries.map((entry) => entry.projectId)));
+  }, [isProjectScopedManager, entries]);
+
+  const assignmentQueries = useProjectAssignmentsForProjects(managedEntryProjectIds);
+
+  // `null` means "not yet known" (still loading, or not applicable to this
+  // signed-in user) — `canManageEntryProject` treats that as "not assigned"
+  // (fail closed) rather than optimistically showing actions that might
+  // disappear once the real data arrives.
+  const assignedProjectIds = useMemo(() => {
+    if (!isProjectScopedManager) return null;
+    if (assignmentQueries.some((query) => query.isLoading)) return null;
+
+    const set = new Set<string>();
+    assignmentQueries.forEach((query, index) => {
+      const projectId = managedEntryProjectIds[index];
+      if (query.data?.some((assignment) => assignment.userId === currentUserId)) {
+        set.add(projectId);
+      }
+    });
+    return set;
+  }, [isProjectScopedManager, assignmentQueries, managedEntryProjectIds, currentUserId]);
+
   const visibleEntries = useMemo(() => {
     if (!entries) return [];
     return [...entries]
@@ -229,6 +285,18 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   function isOwnEntry(entry: TimesheetEntry): boolean {
     return entry.userId === currentUserId;
+  }
+
+  /**
+   * Whether the signed-in manager may Approve/Reject this specific entry —
+   * the "own project (assigned user)" gate from the `bugs/timesheet-history`
+   * feature request. See the component doc comment's "Project-assignment
+   * scope for Approve/Reject" section for the full rationale.
+   */
+  function canManageEntryProject(entry: TimesheetEntry): boolean {
+    if (!canApprove) return false;
+    if (!isProjectScopedManager) return true; // SystemAdmin: unrestricted.
+    return assignedProjectIds?.has(entry.projectId) ?? false;
   }
 
   function formatEntryUserName(entry: TimesheetEntry): string {
@@ -464,6 +532,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                   const isEditing = editingEntryId === entry.id;
                   const editable = isEntryEditable(entry);
                   const own = isOwnEntry(entry);
+                  const canManageThisEntry = canManageEntryProject(entry);
 
                   return (
                     <tr key={entry.id}>
@@ -544,7 +613,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                               Save
                             </Button>
                           </div>
-                        ) : editable && (own || canApprove) ? (
+                        ) : editable && (own || canManageThisEntry) ? (
                           <div className="flex flex-wrap justify-end gap-3">
                             {own && (
                               <button
@@ -556,7 +625,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                                 Edit
                               </button>
                             )}
-                            {canApprove && (
+                            {canManageThisEntry && (
                               <>
                                 <button
                                   type="button"
