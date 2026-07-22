@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
+import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import { toBackendAssignResourcePayload } from "@/lib/server/backendPayloadMappers";
 import { mapBackendAssignment, mapBackendAssignmentList } from "@/lib/server/projectResponseMappers";
 import { assignResourceSchema } from "@/lib/validators/project.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageProjects } from "@/lib/constants/project.constants";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -59,6 +61,20 @@ export async function GET(_request: Request, { params }: RouteParams) {
  * POST /api/projects/[id]/assignments
  * [Auth][SystemAdmin|ProjectAdmin] Assigns a user to the project via
  * `Project/AssignResource`.
+ *
+ * Like `Project/GetProject` and `TimesheetPeriod/GetTimesheetPeriodById`,
+ * this endpoint can signal a *logical* failure — e.g. the target user is
+ * already assigned to a project — via the standard envelope
+ * (`{ StatusCode: 409, IsSuccess: false, Message: "User is already
+ * assigned to a project." }`) at HTTP 200, which axios does not treat as a
+ * thrown error. Previously this handler skipped the envelope check
+ * entirely: `mapBackendAssignment` already returned `null` for that
+ * `IsSuccess: false` shape, but the code silently fell back to the *raw*
+ * envelope (`?? response.data`) and still replied with `201 Created` — so
+ * the "user already assigned" conflict was swallowed and the UI reported a
+ * false success. The envelope is now inspected explicitly (mirroring
+ * `app/api/projects/[id]/route.ts`'s PUT handler) so this surfaces as a
+ * proper 409 with the backend's message instead.
  */
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -111,10 +127,30 @@ export async function POST(request: Request, { params }: RouteParams) {
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    return NextResponse.json(
-      { data: mapBackendAssignment(response.data) ?? response.data },
-      { status: 201 }
-    );
+    const envelope = readBackendEnvelope(response.data);
+    if (!envelope.isSuccess) {
+      const { status, message } = resolveEnvelopeFailure(
+        envelope,
+        "Unable to assign the user. Please try again.",
+        409
+      );
+      return NextResponse.json({ message }, { status });
+    }
+
+    const assignment = mapBackendAssignment(envelope.data);
+    if (!assignment) {
+      // Never forward the raw (potentially PascalCase/internal-shaped)
+      // backend payload to the client when mapping fails — return a safe,
+      // generic error instead (same discipline as
+      // `app/api/projects/[id]/route.ts`'s PUT handler).
+      logger.error("Unable to map backend assignment response after AssignResource", { projectId: id });
+      return NextResponse.json(
+        { message: "Unable to assign the user. Please try again." },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ data: assignment }, { status: 201 });
   } catch (error) {
     const { status, message } = normalizeBackendError(
       error,
