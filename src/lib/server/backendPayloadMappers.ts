@@ -16,6 +16,10 @@ import type {
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
 import type { GenerateInvoiceRequest, UpdateInvoiceRequest } from "@/types/invoice.types";
+import type {
+  CreateExchangeRateRequest,
+  UpdateExchangeRateRequest,
+} from "@/types/exchangeRate.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -163,5 +167,25 @@ export function toBackendUpdateInvoicePayload(payload: UpdateInvoiceRequest) {
     IssuedDate: payload.issuedDate || undefined,
     DueDate: payload.dueDate || undefined,
     Notes: payload.notes || undefined,
+  };
+}
+
+/** Matches `ExchangeRate/CreateExchangeRate`. */
+export function toBackendCreateExchangeRatePayload(payload: CreateExchangeRateRequest) {
+  return {
+    FromCurrencyId: payload.fromCurrencyId,
+    ToCurrencyId: payload.toCurrencyId,
+    Rate: payload.rate,
+    EffectiveDate: payload.effectiveDate,
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `ExchangeRate/UpdateExchangeRate`, which only accepts Rate/EffectiveDate/IsActive (the currency pair is immutable after creation). */
+export function toBackendUpdateExchangeRatePayload(payload: UpdateExchangeRateRequest) {
+  return {
+    Rate: payload.rate,
+    EffectiveDate: payload.effectiveDate,
+    IsActive: payload.isActive,
   };
 }

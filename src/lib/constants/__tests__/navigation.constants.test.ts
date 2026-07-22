@@ -16,6 +16,7 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/reports/cost-revenue")).toBe("Cost & Revenue Report");
       expect(getBreadcrumbLabel("/invoices")).toBe("Invoices");
       expect(getBreadcrumbLabel("/invoices/generate")).toBe("Generate Invoice");
+      expect(getBreadcrumbLabel("/admin/exchange-rates")).toBe("Exchange Rates");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -81,6 +82,14 @@ describe("navigation.constants", () => {
     const usersItem = adminSection?.items.find((item) => item.label === "Users");
     expect(usersItem?.implemented).toBe(true);
     expect(usersItem?.href).toBe("/admin/users/new");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Exchange Rates nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const exchangeRatesItem = adminSection?.items.find((item) => item.label === "Exchange Rates");
+    expect(exchangeRatesItem?.implemented).toBe(true);
+    expect(exchangeRatesItem?.href).toBe("/admin/exchange-rates");
     expect(adminSection?.requiredRole).toBe("SystemAdmin");
   });
 });

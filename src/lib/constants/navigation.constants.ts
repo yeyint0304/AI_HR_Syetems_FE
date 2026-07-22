@@ -46,6 +46,10 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * straight to the one working piece of that screen — `/admin/users/new`
  * ("Create User") — and is enabled for SystemAdmin rather than left
  * disabled, since that page is fully implemented.
+ *
+ * `Exchange Rates` is also implemented (see
+ * `src/app/(dashboard)/admin/exchange-rates/page.tsx`), backed by the
+ * `ExchangeRate/*` endpoints in `docs/HR_System_BE.postman_collection.json`.
  */
 export interface NavItem {
   label: string;
@@ -95,7 +99,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Users", href: "/admin/users/new", icon: Users, implemented: true },
       { label: "Currencies", href: "/admin/currencies", icon: Coins, implemented: false },
-      { label: "Exchange Rates", href: "/admin/exchange-rates", icon: ArrowLeftRight, implemented: false },
+      { label: "Exchange Rates", href: "/admin/exchange-rates", icon: ArrowLeftRight, implemented: true },
       { label: "Rate Cards", href: "/admin/rate-cards", icon: CreditCard, implemented: false },
       { label: "Countries", href: "/admin/countries", icon: Globe, implemented: false },
     ],
@@ -108,6 +112,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/profile": "Profile",
   "/profile/change-password": "Change password",
   "/admin/users/new": "Create user",
+  "/admin/exchange-rates": "Exchange Rates",
   "/projects": "Projects",
   "/projects/new": "New project",
   "/timesheet-periods": "Timesheet Periods",
