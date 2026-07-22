@@ -5,6 +5,7 @@ import {
   deleteTimesheetEntryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
+  rejectTimesheetEntryRequest,
   updateTimesheetEntryRequest,
 } from "@/lib/api/timesheetEntry.api";
 
@@ -97,5 +98,13 @@ describe("timesheetEntry.api", () => {
     await approveTimesheetEntryRequest("1");
 
     expect(apiClient.put).toHaveBeenCalledWith("/timesheet-entries/1/approve");
+  });
+
+  it("rejectTimesheetEntryRequest deletes the entry by id (no dedicated reject endpoint)", async () => {
+    (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
+
+    await rejectTimesheetEntryRequest("1");
+
+    expect(apiClient.delete).toHaveBeenCalledWith("/timesheet-entries/1");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Lock, Pencil } from "lucide-react";
+import { CheckCircle2, Lock, Pencil, XCircle } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -12,6 +12,7 @@ import { useProjectList } from "@/hooks/useProjects";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
+  useRejectTimesheetEntry,
   useTimesheetEntryList,
   useUpdateTimesheetEntry,
 } from "@/hooks/useTimesheetEntries";
@@ -73,15 +74,24 @@ function sumHours(entries: TimesheetEntry[]): number {
  * Manager approval workflow: for SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`),
  * this view broadens its scope from "my history" to every user's entries (the
  * backend's `GetAllTimesheetEntries` already supports this — see
- * `app/api/timesheet-entries/route.ts`) and adds a "User" column plus an
- * "Approve" action on other users' pending entries, calling
+ * `app/api/timesheet-entries/route.ts`) and adds a "User" column plus
+ * "Approve"/"Reject" actions on other users' pending entries, calling
  * `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`. This
  * is the review/approval step `INV-01` ("Includes approved entries only" —
  * `docs/HR_System_User_Stories_Backlog.xlsx`) depends on before an entry can
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
  * treated as irreversible from this UI (confirmed via `ConfirmDialog`) and a
  * manager's *own* pending entries keep the regular Edit action instead of
- * Approve, avoiding a self-approval workflow the backlog never describes.
+ * Approve/Reject, avoiding a self-approval workflow the backlog never
+ * describes.
+ *
+ * "Reject" (`useRejectTimesheetEntry`) sends a pending entry back for
+ * correction. The backend's Timesheet Entry module documents no dedicated
+ * reject/deny endpoint, only Approve and Delete, so rejection is implemented
+ * as a delete of the pending entry (see `rejectTimesheetEntryRequest` for the
+ * full rationale) — the employee re-logs the time on `/timesheets` if still
+ * needed. Like Approve, Reject is confirmed via `ConfirmDialog` and is only
+ * offered for other users' still-pending entries, never a manager's own.
  */
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
@@ -99,6 +109,9 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   const [pendingApproveEntry, setPendingApproveEntry] = useState<TimesheetEntry | null>(null);
   const [approveError, setApproveError] = useState<string | null>(null);
+
+  const [pendingRejectEntry, setPendingRejectEntry] = useState<TimesheetEntry | null>(null);
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const {
     data: projects,
@@ -130,6 +143,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   const updateMutation = useUpdateTimesheetEntry();
   const approveMutation = useApproveTimesheetEntry();
+  const rejectMutation = useRejectTimesheetEntry();
 
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
@@ -200,6 +214,19 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     } catch (error) {
       setPendingApproveEntry(null);
       setApproveError(getApiErrorMessage(error, "Unable to approve this timesheet entry. Please try again."));
+    }
+  }
+
+  async function handleConfirmReject() {
+    if (!pendingRejectEntry) return;
+    setRejectError(null);
+    try {
+      await rejectMutation.mutateAsync(pendingRejectEntry.id);
+      setPendingRejectEntry(null);
+      setSaveSuccess("Timesheet entry rejected.");
+    } catch (error) {
+      setPendingRejectEntry(null);
+      setRejectError(getApiErrorMessage(error, "Unable to reject this timesheet entry. Please try again."));
     }
   }
 
@@ -287,13 +314,14 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
         <h1 className="text-xl font-semibold text-slate-900">Timesheet History</h1>
         <p className="mt-1 text-sm text-slate-500">
           {canApprove
-            ? "Review and approve timesheet entries across all users."
+            ? "Review, approve, or reject timesheet entries across all users."
             : "View all past timesheet entries."}
         </p>
       </div>
 
       {saveSuccess && <Alert variant="success">{saveSuccess}</Alert>}
       {approveError && <Alert variant="error">{approveError}</Alert>}
+      {rejectError && <Alert variant="error">{rejectError}</Alert>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -494,15 +522,26 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                             Edit
                           </button>
                         ) : !own && canApprove && !entry.isApproved ? (
-                          <button
-                            type="button"
-                            onClick={() => setPendingApproveEntry(entry)}
-                            disabled={approveMutation.isPending}
-                            className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
-                          >
-                            <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                            Approve
-                          </button>
+                          <div className="flex justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setPendingApproveEntry(entry)}
+                              disabled={approveMutation.isPending || rejectMutation.isPending}
+                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
+                            >
+                              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingRejectEntry(entry)}
+                              disabled={approveMutation.isPending || rejectMutation.isPending}
+                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                            >
+                              <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
+                              Reject
+                            </button>
+                          </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400">
                             <Lock aria-hidden="true" className="h-3.5 w-3.5" />
@@ -539,6 +578,23 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
         isConfirming={approveMutation.isPending}
         onConfirm={handleConfirmApprove}
         onCancel={() => setPendingApproveEntry(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingRejectEntry !== null}
+        title="Reject timesheet entry"
+        description={
+          pendingRejectEntry
+            ? `Reject ${formatEntryUserName(pendingRejectEntry)}'s ${pendingRejectEntry.hours}h entry on ${formatDisplayDate(
+                pendingRejectEntry.entryDate
+              )}? The entry will be removed and cannot be recovered — they will need to re-log this time if it was worked.`
+            : ""
+        }
+        confirmLabel="Reject"
+        variant="danger"
+        isConfirming={rejectMutation.isPending}
+        onConfirm={handleConfirmReject}
+        onCancel={() => setPendingRejectEntry(null)}
       />
     </div>
   );

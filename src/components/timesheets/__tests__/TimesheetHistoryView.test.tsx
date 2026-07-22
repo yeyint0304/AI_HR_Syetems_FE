@@ -349,7 +349,7 @@ describe("TimesheetHistoryView", () => {
       );
     });
 
-    it("shows a User column and an Approve action for another user's pending entry", async () => {
+    it("shows a User column and Approve/Reject actions for another user's pending entry", async () => {
       mockApi({ entries: [PENDING_ENTRY, OTHER_USER_PENDING_ENTRY] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
 
@@ -357,9 +357,10 @@ describe("TimesheetHistoryView", () => {
 
       expect(screen.getByRole("columnheader", { name: /^user$/i })).toBeInTheDocument();
       expect(screen.getByText("Alex Kumar")).toBeInTheDocument();
-      // Own pending entry still gets the regular Edit action, not Approve.
+      // Own pending entry still gets the regular Edit action, not Approve/Reject.
       expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
     });
 
     it("approves another user's pending entry after confirming the dialog", async () => {
@@ -407,6 +408,66 @@ describe("TimesheetHistoryView", () => {
 
       expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
       expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("does not show a Reject action for another user's already-approved entry", async () => {
+      const approvedOtherUserEntry = { ...OTHER_USER_PENDING_ENTRY, isApproved: true };
+      mockApi({ entries: [approvedOtherUserEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("rejects another user's pending entry after confirming the dialog", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^reject$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/alex kumar/i);
+
+      await user.click(within(dialog).getByRole("button", { name: /^reject$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.delete).toHaveBeenCalledWith(`/timesheet-entries/${OTHER_USER_PENDING_ENTRY.id}`)
+      );
+      expect(await screen.findByText(/timesheet entry rejected/i)).toBeInTheDocument();
+    });
+
+    it("shows an error and keeps the entry pending when rejection fails", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      (apiClient.delete as jest.Mock).mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { data: { message: "You do not have permission to reject timesheet entries." } },
+      });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^reject$/i }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^reject$/i }));
+
+      expect(await screen.findByText(/you do not have permission to reject/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+    });
+
+    it("cancelling the reject dialog does not call the API", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^reject$/i }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(apiClient.delete).not.toHaveBeenCalled();
     });
   });
 });
