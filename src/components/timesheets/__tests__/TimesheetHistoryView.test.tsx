@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TimesheetHistoryView } from "@/components/timesheets/TimesheetHistoryView";
 import { apiClient } from "@/lib/api/axiosInstance";
+import { useAuthStore } from "@/stores/auth.store";
+import { USER_ROLES } from "@/lib/constants/auth.constants";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -16,6 +18,7 @@ function renderWithClient(ui: React.ReactElement) {
 }
 
 const CURRENT_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66af01";
+const OTHER_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66af11";
 const PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af02";
 const LOCKED_PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af03";
 const PROJECT_ID = "3fa85f64-5717-4562-b3fc-2c963f66af04";
@@ -76,6 +79,21 @@ const APPROVED_ENTRY = {
   isApproved: true,
 };
 
+const OTHER_USER_PENDING_ENTRY = {
+  id: "3fa85f64-5717-4562-b3fc-2c963f66af12",
+  userId: OTHER_USER_ID,
+  userFirstName: "Alex",
+  userLastName: "Kumar",
+  projectId: PROJECT_ID,
+  projectCode: "PRJ-ALPHA",
+  projectName: "Project Alpha",
+  timesheetPeriodId: PERIOD_ID,
+  entryDate: "2025-01-09",
+  hours: 4,
+  taskDescription: "Someone else's work",
+  isApproved: false,
+};
+
 const LOCKED_PERIOD_ENTRY = {
   id: LOCKED_ENTRY_ID,
   userId: CURRENT_USER_ID,
@@ -107,6 +125,7 @@ function mockApi({ periods = [PERIOD], projects = [PROJECT, OTHER_PROJECT], entr
 describe("TimesheetHistoryView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useAuthStore.setState({ user: null });
   });
 
   it("shows a loading state while fetching", () => {
@@ -309,5 +328,85 @@ describe("TimesheetHistoryView", () => {
         expect.objectContaining({ params: expect.objectContaining({ userId: CURRENT_USER_ID }) })
       )
     );
+  });
+
+  describe("as a manager (ProjectAdmin/SystemAdmin)", () => {
+    beforeEach(() => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+      });
+    });
+
+    it("omits the userId filter so it can review every user's entries", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries",
+          expect.objectContaining({ params: expect.objectContaining({ userId: undefined }) })
+        )
+      );
+    });
+
+    it("shows a User column and an Approve action for another user's pending entry", async () => {
+      mockApi({ entries: [PENDING_ENTRY, OTHER_USER_PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.getByRole("columnheader", { name: /^user$/i })).toBeInTheDocument();
+      expect(screen.getByText("Alex Kumar")).toBeInTheDocument();
+      // Own pending entry still gets the regular Edit action, not Approve.
+      expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+    });
+
+    it("approves another user's pending entry after confirming the dialog", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { message: "Timesheet entry approved successfully." } });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/alex kumar/i);
+
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${OTHER_USER_PENDING_ENTRY.id}/approve`)
+      );
+      expect(await screen.findByText(/approved successfully/i)).toBeInTheDocument();
+    });
+
+    it("shows an error and keeps the entry pending when approval fails", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      (apiClient.put as jest.Mock).mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { data: { message: "You do not have permission to approve timesheet entries." } },
+      });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      expect(await screen.findByText(/you do not have permission to approve/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+    });
+
+    it("does not show an Approve action for another user's already-approved entry", async () => {
+      const approvedOtherUserEntry = { ...OTHER_USER_PENDING_ENTRY, isApproved: true };
+      mockApi({ entries: [approvedOtherUserEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
   });
 });

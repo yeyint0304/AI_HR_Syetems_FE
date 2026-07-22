@@ -51,3 +51,16 @@ export async function updateTimesheetEntryRequest(
 export async function deleteTimesheetEntryRequest(id: string): Promise<void> {
   await apiClient.delete(`/timesheet-entries/${id}`);
 }
+
+/**
+ * Approves a pending timesheet entry (`TimesheetEntry/ApproveTimesheetEntry`).
+ * Restricted server-side to SystemAdmin/ProjectAdmin (see
+ * `app/api/timesheet-entries/[id]/approve/route.ts`). The backend's saved
+ * success example only returns `{ Id, IsApproved, ApprovedAt, ApprovedBy }`,
+ * so — same as `updateTimesheetEntryRequest` above — the caller should
+ * refetch the list (`useApproveTimesheetEntry`'s cache invalidation handles
+ * this) rather than rely on a return value here.
+ */
+export async function approveTimesheetEntryRequest(id: string): Promise<void> {
+  await apiClient.put(`/timesheet-entries/${id}/approve`);
+}
