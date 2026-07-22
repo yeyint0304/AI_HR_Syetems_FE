@@ -122,6 +122,19 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * cannot be logged in advance. This applies uniformly to create, update, and
  * delete (clearing hours), since all three share the same per-cell lock gate
  * and `handleSaveAll` skips locked cells outright.
+ *
+ * Per the same feature request ("when change the hour then open for
+ * description"): typing a non-empty hours value into a cell automatically
+ * expands that project's task-notes panel (the same panel the wireframe's
+ * "click [info] expands task notes" affordance opens manually) — see the
+ * hours `<input>`'s `onChange` in `TimesheetGrid` and `expandProjectNotes`
+ * below. `taskDescription` is a required field on both
+ * `createTimesheetEntrySchema` and `updateTimesheetEntrySchema`
+ * (`lib/validators/timesheetEntry.validators.ts`), so surfacing the notes
+ * field the moment hours are entered, rather than requiring a separate manual
+ * click, prevents a "Save All" round trip failing only to discover a
+ * description was required all along. The manual info-icon toggle
+ * (`onToggleExpand`) still works as before for reviewing/collapsing notes.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const {
@@ -262,6 +275,17 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       delete next[key];
       return next;
     });
+  }
+
+  /**
+   * Opens (never closes) a project's task-notes panel — used when the user
+   * enters hours for one of its cells, so the description field they'll need
+   * for "Save All" is already visible. Unlike `onToggleExpand` (the manual
+   * info-icon button), this never collapses an already-open panel out from
+   * under the user while they're mid-edit.
+   */
+  function expandProjectNotes(projectId: string) {
+    setExpandedProjectId(projectId);
   }
 
   function isCellLocked(date: string, baseline: TimesheetEntry | undefined): boolean {
@@ -495,6 +519,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
           onToggleExpand={(projectId) =>
             setExpandedProjectId((current) => (current === projectId ? null : projectId))
           }
+          onExpandProject={expandProjectNotes}
           onCellChange={updateDraft}
           isCellLocked={isCellLocked}
         />
@@ -512,6 +537,8 @@ interface TimesheetGridProps {
   fieldErrors: Record<string, string>;
   expandedProjectId: string | null;
   onToggleExpand: (projectId: string) => void;
+  /** Opens (never toggles closed) a project's task-notes panel — see `expandProjectNotes` in `MyTimesheetView`. */
+  onExpandProject: (projectId: string) => void;
   onCellChange: (key: string, patch: Partial<DraftCell>) => void;
   isCellLocked: (date: string, baseline: TimesheetEntry | undefined) => boolean;
 }
@@ -525,6 +552,7 @@ function TimesheetGrid({
   fieldErrors,
   expandedProjectId,
   onToggleExpand,
+  onExpandProject,
   onCellChange,
   isCellLocked,
 }: TimesheetGridProps) {
@@ -627,7 +655,16 @@ function TimesheetGrid({
                                 disabled={locked}
                                 aria-invalid={Boolean(error) || undefined}
                                 aria-describedby={error ? `${key}-error` : undefined}
-                                onChange={(event) => onCellChange(key, { hours: event.target.value })}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  onCellChange(key, { hours: value });
+                                  // Auto-open this project's task-notes panel the moment
+                                  // hours are entered, so the (required) description field
+                                  // is immediately visible — see the component doc comment.
+                                  if (value.trim() !== "") {
+                                    onExpandProject(project.id);
+                                  }
+                                }}
                                 className={`w-16 rounded-md border px-2 py-1.5 text-center text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${
                                   error ? "border-red-400" : "border-slate-300"
                                 }`}

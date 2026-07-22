@@ -154,6 +154,18 @@ function sumHours(entries: TimesheetEntry[]): number {
  * `bugs/timesheet-history` request "how can i add new invoice" — a manager
  * finishing their review here previously had no in-context way to jump into
  * invoicing and had to know to navigate to `/invoices` via the sidebar first.
+ *
+ * The link forwards whatever Project/Date From/Date To filters are currently
+ * *applied* (`appliedFilters`, `generateInvoiceHref`) as
+ * `?projectId=&billingPeriodStart=&billingPeriodEnd=` query params, which
+ * `InvoiceGenerateForm` pre-fills itself with. This is the other half of the
+ * `bugs/timesheet-history` "fix the create invoice that showing 400 ... No
+ * approved timesheet entries found in the specified billing period" request:
+ * a manager who just filtered this page down to the project/range they
+ * reviewed and approved lands on the generate form with the exact same
+ * values already selected, rather than re-entering (and possibly
+ * mistyping/misremembering) them from scratch. With no filters applied, the
+ * link is unchanged (`/invoices/generate`, no query string).
  */
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
@@ -219,6 +231,19 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   const updateMutation = useUpdateTimesheetEntry();
   const approveMutation = useApproveTimesheetEntry();
   const rejectMutation = useRejectTimesheetEntry();
+
+  // Forwards the currently *applied* Project/Date From/Date To filters onto
+  // `/invoices/generate` — see the component doc comment's "Generate
+  // Invoice" section. Falls back to the plain, unparameterized route when no
+  // filters are applied, matching the pre-existing link behaviour exactly.
+  const generateInvoiceHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (appliedFilters.projectId) params.set("projectId", appliedFilters.projectId);
+    if (appliedFilters.dateFrom) params.set("billingPeriodStart", appliedFilters.dateFrom);
+    if (appliedFilters.dateTo) params.set("billingPeriodEnd", appliedFilters.dateTo);
+    const query = params.toString();
+    return query ? `/invoices/generate?${query}` : "/invoices/generate";
+  }, [appliedFilters]);
 
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
@@ -441,7 +466,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
         </div>
         {canGenerateInvoice && (
           <Link
-            href="/invoices/generate"
+            href={generateInvoiceHref}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
             <Receipt aria-hidden="true" className="h-4 w-4" />

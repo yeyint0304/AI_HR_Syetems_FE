@@ -364,6 +364,29 @@ describe("TimesheetHistoryView", () => {
       expect(link).toHaveAttribute("href", "/invoices/generate");
     });
 
+    // `bugs/timesheet-history`: "fix the create invoice that showing 400 ...
+    // No approved timesheet entries found in the specified billing period" —
+    // forwarding the applied filters lets `InvoiceGenerateForm` pre-fill the
+    // exact project/range the manager just reviewed.
+    it("forwards the applied Project/Date From/Date To filters as query params on the Generate Invoice link", async () => {
+      mockApi({ entries: [] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByText(/you have no timesheet entries yet/i);
+
+      await user.selectOptions(screen.getByLabelText(/^project$/i), PROJECT_ID);
+      await user.type(screen.getByLabelText(/date from/i), "2025-01-01");
+      await user.type(screen.getByLabelText(/date to/i), "2025-01-31");
+      await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute(
+        "href",
+        `/invoices/generate?projectId=${PROJECT_ID}&billingPeriodStart=2025-01-01&billingPeriodEnd=2025-01-31`
+      );
+    });
+
     it("omits the userId filter so it can review every user's entries", async () => {
       mockApi({ entries: [] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);

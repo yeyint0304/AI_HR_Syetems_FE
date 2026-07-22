@@ -219,6 +219,24 @@ describe("MyTimesheetView", () => {
     expect(mondayInput).toBeDisabled();
   });
 
+  it("automatically opens the task-notes panel once hours are entered", async () => {
+    mockApi({ entries: [] });
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    // Not expanded yet — the notes field for Monday isn't in the document.
+    expect(screen.queryByLabelText("Jan 6")).not.toBeInTheDocument();
+
+    const mondayInput = await screen.findByLabelText(/Project Alpha hours on Jan 6/i);
+    await user.type(mondayInput, "8");
+
+    // Typing hours should reveal the description field without a manual click
+    // on the info-icon toggle — see the `bugs/timesheet-history` feature
+    // request ("when change the hour then open for description").
+    expect(await screen.findByLabelText("Jan 6")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hide task notes for project alpha/i })).toBeInTheDocument();
+  });
+
   it("creates a new entry for a previously-empty cell on Save All", async () => {
     mockApi({ entries: [] });
     (apiClient.post as jest.Mock).mockResolvedValueOnce({ data: { data: { ...MONDAY_ENTRY, hours: 8 } } });
@@ -228,7 +246,8 @@ describe("MyTimesheetView", () => {
     const mondayInput = await screen.findByLabelText(/Project Alpha hours on Jan 6/i);
     await user.type(mondayInput, "8");
 
-    await user.click(screen.getByRole("button", { name: /show task notes for project alpha/i }));
+    // The task-notes panel now auto-opens as soon as hours are entered (see the
+    // dedicated test above), so no manual click on the info-icon toggle is needed.
     const notesField = await screen.findByLabelText("Jan 6");
     await user.type(notesField, "New feature work");
 

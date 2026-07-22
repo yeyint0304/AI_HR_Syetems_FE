@@ -10,8 +10,10 @@ jest.mock("@/lib/api/axiosInstance", () => ({
 
 const mockPush = jest.fn();
 const mockRefresh = jest.fn();
+let mockSearchParams = new URLSearchParams();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -25,10 +27,11 @@ const PROJECT_ALPHA = { id: "p1", code: "PRJ-ALPHA", name: "Project Alpha" };
 const CURRENCY_SGD = { id: "c1", code: "SGD", name: "Singapore Dollar", symbol: "S$", isBaseCurrency: true, isActive: true };
 const CURRENCY_USD = { id: "c2", code: "USD", name: "US Dollar", symbol: "$", isBaseCurrency: false, isActive: true };
 
-function mockGetResponses() {
+function mockGetResponses(approvedEntries: unknown[] = []) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT_ALPHA] } });
     if (url === "/currencies") return Promise.resolve({ data: { data: [CURRENCY_SGD, CURRENCY_USD] } });
+    if (url === "/timesheet-entries") return Promise.resolve({ data: { data: approvedEntries } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
 }
@@ -44,6 +47,7 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
 describe("InvoiceGenerateForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParams = new URLSearchParams();
   });
 
   it("renders all fields and pre-selects the base currency once loaded", async () => {
@@ -167,5 +171,44 @@ describe("InvoiceGenerateForm", () => {
 
     await user.click(screen.getByRole("button", { name: /^cancel$/i }));
     expect(mockPush).toHaveBeenCalledWith("/invoices");
+  });
+
+  // `bugs/timesheet-history`: "fix the create invoice that showing 400 ...
+  // No approved timesheet entries found in the specified billing period."
+  it("pre-fills Project/Billing Period from the ?projectId=&billingPeriodStart=&billingPeriodEnd= query params", async () => {
+    mockSearchParams = new URLSearchParams({
+      projectId: "p1",
+      billingPeriodStart: "2025-02-01",
+      billingPeriodEnd: "2025-02-28",
+    });
+    mockGetResponses([{ id: "e1", entryDate: "2025-02-15", isApproved: true }]);
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await waitFor(() => expect(screen.getByLabelText(/^project$/i)).toHaveValue("p1"));
+    expect(screen.getByLabelText(/billing period from/i)).toHaveValue("2025-02-01");
+    expect(screen.getByLabelText(/billing period to/i)).toHaveValue("2025-02-28");
+  });
+
+  it("warns when the selected project has no approved entries in the chosen billing period", async () => {
+    mockGetResponses([]);
+    const user = userEvent.setup();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await fillRequiredFields(user);
+
+    expect(
+      await screen.findByText(/no approved timesheet entries were found for this project/i)
+    ).toBeInTheDocument();
+  });
+
+  it("does not warn when an approved entry falls inside the chosen billing period", async () => {
+    mockGetResponses([{ id: "e1", entryDate: "2025-01-15", isApproved: true }]);
+    const user = userEvent.setup();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await fillRequiredFields(user);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries", expect.anything()));
+    expect(screen.queryByText(/no approved timesheet entries were found for this project/i)).not.toBeInTheDocument();
   });
 });
