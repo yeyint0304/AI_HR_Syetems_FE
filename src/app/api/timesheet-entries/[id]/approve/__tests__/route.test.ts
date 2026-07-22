@@ -9,7 +9,7 @@ import { backendApiClient } from "@/lib/server/backendApiClient";
 import { getAccessToken } from "@/lib/server/authCookies";
 
 jest.mock("@/lib/server/backendApiClient", () => ({
-  backendApiClient: { put: jest.fn() },
+  backendApiClient: { get: jest.fn(), put: jest.fn() },
 }));
 
 jest.mock("@/lib/server/authCookies", () => ({
@@ -45,6 +45,57 @@ const projectAdminToken = buildToken({
   role: "ProjectAdmin",
 });
 
+const systemAdminToken = buildToken({
+  sub: "sysadmin-1",
+  email: "sysadmin@hrsystem.com",
+  role: "SystemAdmin",
+});
+
+/** Response for the `Project/GetProjectAssignments/{projectId}` lookup `canManagerActOnProjectEntry` performs. */
+function assignmentsEnvelope(assignments: Array<{ userId: string }>) {
+  return {
+    data: {
+      StatusCode: 200,
+      IsSuccess: true,
+      Message: "Success",
+      Data: assignments.map((assignment, index) => ({
+        Id: `assignment-${index}`,
+        UserId: assignment.userId,
+        ResourceRoleTypeId: "role-1",
+      })),
+    },
+  };
+}
+
+/**
+ * Mocks the `GetTimesheetEntryById` lookup `fetchEntryForApproval` performs
+ * before approving. Defaults to a still-pending entry owned by `manager-1`
+ * (the signed-in `projectAdminToken` above) so most tests exercise the
+ * self-approval path by default — see `TimesheetHistoryView.tsx`'s
+ * "Self-approval is intentionally permitted" note for why that's the
+ * intended behavior, not an oversight.
+ */
+function mockEntryLookup(overrides: Record<string, unknown> = {}) {
+  (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+    data: {
+      StatusCode: 200,
+      IsSuccess: true,
+      Message: "OK",
+      Data: {
+        Id: "1",
+        UserId: "manager-1",
+        ProjectId: "project-1",
+        TimesheetPeriodId: "period-1",
+        EntryDate: "2025-02-24",
+        Hours: 4,
+        TaskDescription: "Work",
+        IsApproved: false,
+        ...overrides,
+      },
+    },
+  });
+}
+
 describe("PUT /api/timesheet-entries/[id]/approve", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -59,6 +110,7 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
 
     expect(response.status).toBe(401);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
     expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 
@@ -73,11 +125,48 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
     expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 
-  it("approves the entry and returns 200 on success", async () => {
+  it("404s when the entry does not exist", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 404, IsSuccess: false, Message: "Timesheet entry not found.", Data: null },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.message).toBe("Timesheet entry not found.");
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("409s without calling the backend's approve endpoint when the entry is already approved", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup({ IsApproved: true });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.message).toBe("This timesheet entry has already been approved.");
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("allows a manager to approve their own still-pending entry and returns 200 on success", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    // `UserId: "manager-1"` matches the signed-in caller's `sub` — this is
+    // the self-approval scenario `TimesheetHistoryView.tsx` intentionally
+    // surfaces via Approve/Reject on a manager's own pending row.
+    mockEntryLookup({ UserId: "manager-1" });
     (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
       data: {
         StatusCode: 200,
@@ -102,10 +191,19 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
   });
 
-  it("forwards the backend's message for an expected 4xx logical failure", async () => {
+  it("allows a manager assigned to the project to approve another user's still-pending entry and returns 200 on success", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup({ UserId: "employee-9" });
+    // `canManagerActOnProjectEntry`'s assignments lookup — `manager-1` is an
+    // assigned resource on `project-1` (the entry's project).
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
     (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
-      data: { StatusCode: 409, IsSuccess: false, Message: "Timesheet entry is already approved.", Data: null },
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Timesheet entry approved successfully.",
+        Data: { Id: "1", IsApproved: true, ApprovedAt: "2026-06-22T05:18:00Z", ApprovedBy: "manager-1" },
+      },
     });
 
     const response = await PUT(
@@ -114,12 +212,69 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
     const body = await response.json();
 
-    expect(response.status).toBe(409);
-    expect(body.message).toBe("Timesheet entry is already approved.");
+    expect(response.status).toBe(200);
+    expect(body.message).toBe("Timesheet entry approved successfully.");
+  });
+
+  it("403s a ProjectAdmin approving another user's entry on a project they are not assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup({ UserId: "employee-9" });
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(assignmentsEnvelope([])); // not assigned
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.message).toMatch(/do not have permission/i);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("allows a SystemAdmin to approve another user's entry regardless of project assignment", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
+    mockEntryLookup({ UserId: "employee-9" });
+    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Timesheet entry approved successfully.",
+        Data: { Id: "1", IsApproved: true, ApprovedAt: "2026-06-22T05:18:00Z", ApprovedBy: "sysadmin-1" },
+      },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+
+    expect(response.status).toBe(200);
+    // SystemAdmin is exempt from project scoping, so no assignments lookup
+    // is performed — only the one `GetTimesheetEntryById` call from `mockEntryLookup`.
+    expect(backendApiClient.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the backend's message for an expected 4xx logical failure from the approve call itself", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup();
+    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 400, IsSuccess: false, Message: "Unable to process this approval request.", Data: null },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.message).toBe("Unable to process this approval request.");
   });
 
   it("sanitizes a 5xx envelope-based logical failure instead of forwarding the raw backend message", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup();
     (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
       data: {
         StatusCode: 500,
@@ -141,6 +296,7 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
 
   it("returns a 502 fallback when the backend call itself fails", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    mockEntryLookup();
     (backendApiClient.put as jest.Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 500, data: {} },
@@ -152,5 +308,21 @@ describe("PUT /api/timesheet-entries/[id]/approve", () => {
     );
 
     expect(response.status).toBe(502);
+  });
+
+  it("returns a 502 fallback when the entry lookup itself fails", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 500, data: {} },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/timesheet-entries/1/approve"),
+      routeParams("1")
+    );
+
+    expect(response.status).toBe(502);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 });

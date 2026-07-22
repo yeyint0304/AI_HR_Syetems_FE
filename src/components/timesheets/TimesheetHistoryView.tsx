@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Lock, Pencil, XCircle } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Lock, Pencil, Receipt, XCircle } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
@@ -23,9 +24,11 @@ import {
 import {
   canManageAnyTimesheetEntry,
   ENTRY_HOURS_STEP,
+  isProjectScopedTimesheetManager,
   MAX_ENTRY_HOURS,
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
+import { canManageInvoices } from "@/lib/constants/invoice.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
 import { compareDateOnly } from "@/lib/utils/week";
@@ -75,45 +78,111 @@ function sumHours(entries: TimesheetEntry[]): number {
  * this view broadens its scope from "my history" to every user's entries (the
  * backend's `GetAllTimesheetEntries` already supports this — see
  * `app/api/timesheet-entries/route.ts`) and adds a "User" column plus
- * "Approve"/"Reject" actions on other users' pending entries, calling
+ * "Approve"/"Reject" actions on pending entries, calling
  * `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`. This
  * is the review/approval step `INV-01` ("Includes approved entries only" —
  * `docs/HR_System_User_Stories_Backlog.xlsx`) depends on before an entry can
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
- * treated as irreversible from this UI (confirmed via `ConfirmDialog`) and a
- * manager's *own* pending entries keep the regular Edit action instead of
- * Approve/Reject, avoiding a self-approval workflow the backlog never
- * describes.
+ * treated as irreversible from this UI (confirmed via `ConfirmDialog`).
  *
- * Per row, for a still-pending (`!isApproved`) entry, exactly one of three
- * things renders in the Actions column, and the difference is driven purely
- * by ownership + role + the entry's period lock state (`isEntryEditable`),
- * never by anything else:
- *   - **Edit** — shown only when it's the signed-in user's *own* entry and
- *     `isEntryEditable` (pending and its period isn't locked).
- *   - **Approve/Reject** — shown only for a manager (`canApprove`) viewing
- *     *someone else's* entry, and only while that same `isEntryEditable`
- *     check passes. Reusing `isEntryEditable` here (rather than a bare
- *     `!entry.isApproved` check) is deliberate: once a timesheet period is
- *     locked, every entry inside it — regardless of whose it is — should
- *     freeze the same way Edit already does, so Approve/Reject can't act on
- *     an entry whose period a manager has since locked.
- *   - **Locked** — everything else (an approved entry, a locked-period
- *     entry, or another user's entry viewed by a non-manager, who never
- *     reaches this row at all since the entries query is scoped to their
- *     own `userId`).
+ * Per row, for a still-pending (`!isApproved`) entry whose period isn't
+ * locked (`isEntryEditable`), the Actions column renders *every* action the
+ * signed-in user is entitled to for that entry — ownership and role are
+ * independent, non-exclusive gates, not an either/or choice:
+ *   - **Edit** — shown whenever it's the signed-in user's *own* entry,
+ *     regardless of project assignment (logging/editing your own work is
+ *     never project-scoped).
+ *   - **Approve** / **Reject** — shown whenever the signed-in user is a
+ *     manager (`canApprove`) *and* is authorized to act on that entry's
+ *     project (`canManageEntryProject`, below) — including their own entry.
+ *     A manager who owns a still-pending, unlocked entry therefore sees Edit
+ *     *and* Approve/Reject together on that row (assuming they're also
+ *     authorized for its project).
+ *   - **Locked** — shown instead of the above whenever no gate applies (an
+ *     approved entry, a locked-period entry, a non-manager viewing another
+ *     user's entry — who never reaches this row at all since the entries
+ *     query is scoped to their own `userId` — or, per the
+ *     `bugs/timesheet-history` feature request "if not his own project (not
+ *     assign user) then don't add any action for it", a `ProjectAdmin`
+ *     reviewing an entry for a project they are *not* assigned to).
+ *
+ * **Project-assignment scope for Approve/Reject** (`canManageEntryProject`):
+ * a `ProjectAdmin` (`isProjectScopedTimesheetManager`, per
+ * `lib/constants/timesheetEntry.constants.ts`) may only Approve/Reject
+ * entries for projects they are an assigned resource on
+ * (`Project/GetProjectAssignments`, fetched in bulk for every distinct
+ * project in the visible list via `useProjectAssignmentsForProjects`) —
+ * outside those projects they get no action at all on someone else's entry,
+ * even though they still see the row (for organization-wide visibility).
+ * `SystemAdmin` is exempt from this scoping and can Approve/Reject anything,
+ * consistent with its unrestricted authority elsewhere in this app (e.g.
+ * `ADMIN_ROUTE_PREFIX`). While the per-project assignment queries are still
+ * loading, `canManageEntryProject` conservatively returns `false` (fails
+ * closed to "Locked") rather than flashing Approve/Reject buttons that might
+ * immediately disappear once the real assignment data arrives.
+ *
+ * `isEntryEditable` gates all of the above: once a timesheet period is
+ * locked, every entry inside it — regardless of whose it is — freezes to
+ * "Locked", so neither Edit nor Approve/Reject can act on an entry whose
+ * period has since been locked.
+ *
+ * Self-approval is intentionally permitted, not an oversight: this is a
+ * deliberate product decision (see the `bugs/timesheet-history` feature
+ * request), and it is *consistent* with the backend contract rather than a
+ * new capability layered on top of it — `TimesheetEntry/ApproveTimesheetEntry`
+ * is documented as `[Auth]`-only with no ownership restriction, and
+ * `canManageAnyTimesheetEntry` (`lib/constants/timesheetEntry.constants.ts`)
+ * already grants a SystemAdmin/ProjectAdmin authority over *any* user's
+ * entries, their own included. `app/api/timesheet-entries/[id]/approve/route.ts`
+ * enforces this server-side (entry-existence + already-approved checks
+ * mirroring the ownership-fetch pattern in the sibling `PUT`/`DELETE`
+ * routes) so the rule holds regardless of what this UI renders, not only
+ * because the UI happens to show these buttons.
  *
  * "Reject" (`useRejectTimesheetEntry`) sends a pending entry back for
  * correction. The backend's Timesheet Entry module documents no dedicated
  * reject/deny endpoint, only Approve and Delete, so rejection is implemented
  * as a delete of the pending entry (see `rejectTimesheetEntryRequest` for the
  * full rationale) — the employee re-logs the time on `/timesheets` if still
- * needed. Like Approve, Reject is confirmed via `ConfirmDialog` and is only
- * offered for other users' still-pending entries, never a manager's own.
+ * needed. Like Approve, Reject is confirmed via `ConfirmDialog`.
+ *
+ * A "Generate Invoice" link (gated by `canManageInvoices`, same
+ * SystemAdmin/ProjectAdmin roles as `canApprove`) sits in the page header,
+ * routing to `/invoices/generate`. Per `INV-01`'s "includes approved entries
+ * only" rule, this page is where those entries get approved in the first
+ * place, so the link is this feature's direct answer to the
+ * `bugs/timesheet-history` request "how can i add new invoice" — a manager
+ * finishing their review here previously had no in-context way to jump into
+ * invoicing and had to know to navigate to `/invoices` via the sidebar first.
+ *
+ * The link forwards whatever Project/Date From/Date To filters are currently
+ * *applied* (`appliedFilters`, `generateInvoiceHref`) as
+ * `?projectId=&billingPeriodStart=&billingPeriodEnd=` query params, which
+ * `InvoiceGenerateForm` pre-fills itself with. This is the other half of the
+ * `bugs/timesheet-history` "fix the create invoice that showing 400 ... No
+ * approved timesheet entries found in the specified billing period" request:
+ * a manager who just filtered this page down to the project/range they
+ * reviewed and approved lands on the generate form with the exact same
+ * values already selected, rather than re-entering (and possibly
+ * mistyping/misremembering) them from scratch. With no filters applied, the
+ * link is unchanged (`/invoices/generate`, no query string).
  */
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
   const canApprove = canManageAnyTimesheetEntry(user?.role);
+  // Only a `ProjectAdmin` is narrowed to their assigned projects; `SystemAdmin`
+  // keeps unrestricted Approve/Reject authority (see the component doc
+  // comment's "Project-assignment scope for Approve/Reject" section).
+  const isProjectScopedManager = canApprove && isProjectScopedTimesheetManager(user?.role);
+  // Same SystemAdmin/ProjectAdmin role set as `canApprove`
+  // (`INVOICE_MANAGER_ROLES` === `TIMESHEET_ENTRY_MANAGER_ROLES`), but checked
+  // via the Invoice module's own permission constant rather than reusing
+  // `canApprove` — this gates a shortcut into `/invoices/generate`, not a
+  // timesheet-entry action, and the two permission sets could diverge later.
+  // Answers the `bugs/timesheet-history` feature request ("how can i add new
+  // invoice"): once approved entries exist here, this link is the entry point
+  // into invoicing them, mirroring the "+ Generate Invoice" button on `/invoices`.
+  const canGenerateInvoice = canManageInvoices(user?.role);
 
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -163,6 +232,19 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   const approveMutation = useApproveTimesheetEntry();
   const rejectMutation = useRejectTimesheetEntry();
 
+  // Forwards the currently *applied* Project/Date From/Date To filters onto
+  // `/invoices/generate` — see the component doc comment's "Generate
+  // Invoice" section. Falls back to the plain, unparameterized route when no
+  // filters are applied, matching the pre-existing link behaviour exactly.
+  const generateInvoiceHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (appliedFilters.projectId) params.set("projectId", appliedFilters.projectId);
+    if (appliedFilters.dateFrom) params.set("billingPeriodStart", appliedFilters.dateFrom);
+    if (appliedFilters.dateTo) params.set("billingPeriodEnd", appliedFilters.dateTo);
+    const query = params.toString();
+    return query ? `/invoices/generate?${query}` : "/invoices/generate";
+  }, [appliedFilters]);
+
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -173,6 +255,35 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     for (const period of periods ?? []) map.set(period.id, period);
     return map;
   }, [periods]);
+
+  // Distinct project ids across every fetched entry — only computed for a
+  // project-scoped manager (a `ProjectAdmin`); a plain `User` never sees
+  // Approve/Reject at all, and `SystemAdmin` isn't scoped, so neither needs
+  // this extra round trip.
+  const managedEntryProjectIds = useMemo(() => {
+    if (!isProjectScopedManager || !entries) return [];
+    return Array.from(new Set(entries.map((entry) => entry.projectId)));
+  }, [isProjectScopedManager, entries]);
+
+  const assignmentQueries = useProjectAssignmentsForProjects(managedEntryProjectIds);
+
+  // `null` means "not yet known" (still loading, or not applicable to this
+  // signed-in user) — `canManageEntryProject` treats that as "not assigned"
+  // (fail closed) rather than optimistically showing actions that might
+  // disappear once the real data arrives.
+  const assignedProjectIds = useMemo(() => {
+    if (!isProjectScopedManager) return null;
+    if (assignmentQueries.some((query) => query.isLoading)) return null;
+
+    const set = new Set<string>();
+    assignmentQueries.forEach((query, index) => {
+      const projectId = managedEntryProjectIds[index];
+      if (query.data?.some((assignment) => assignment.userId === currentUserId)) {
+        set.add(projectId);
+      }
+    });
+    return set;
+  }, [isProjectScopedManager, assignmentQueries, managedEntryProjectIds, currentUserId]);
 
   const visibleEntries = useMemo(() => {
     if (!entries) return [];
@@ -219,6 +330,18 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   function isOwnEntry(entry: TimesheetEntry): boolean {
     return entry.userId === currentUserId;
+  }
+
+  /**
+   * Whether the signed-in manager may Approve/Reject this specific entry —
+   * the "own project (assigned user)" gate from the `bugs/timesheet-history`
+   * feature request. See the component doc comment's "Project-assignment
+   * scope for Approve/Reject" section for the full rationale.
+   */
+  function canManageEntryProject(entry: TimesheetEntry): boolean {
+    if (!canApprove) return false;
+    if (!isProjectScopedManager) return true; // SystemAdmin: unrestricted.
+    return assignedProjectIds?.has(entry.projectId) ?? false;
   }
 
   function formatEntryUserName(entry: TimesheetEntry): string {
@@ -332,13 +455,24 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Timesheet History</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {canApprove
-            ? "Review, approve, or reject timesheet entries across all users."
-            : "View all past timesheet entries."}
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Timesheet History</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {canApprove
+              ? "Review, approve, or reject timesheet entries across all users."
+              : "View all past timesheet entries."}
+          </p>
+        </div>
+        {canGenerateInvoice && (
+          <Link
+            href={generateInvoiceHref}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <Receipt aria-hidden="true" className="h-4 w-4" />
+            Generate Invoice
+          </Link>
+        )}
       </div>
 
       {saveSuccess && <Alert variant="success">{saveSuccess}</Alert>}
@@ -454,6 +588,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                   const isEditing = editingEntryId === entry.id;
                   const editable = isEntryEditable(entry);
                   const own = isOwnEntry(entry);
+                  const canManageThisEntry = canManageEntryProject(entry);
 
                   return (
                     <tr key={entry.id}>
@@ -534,35 +669,40 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                               Save
                             </Button>
                           </div>
-                        ) : own && editable ? (
-                          <button
-                            type="button"
-                            onClick={() => startEdit(entry)}
-                            className="inline-flex items-center gap-1 rounded text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                          >
-                            <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
-                            Edit
-                          </button>
-                        ) : !own && canApprove && editable ? (
-                          <div className="flex justify-end gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setPendingApproveEntry(entry)}
-                              disabled={approveMutation.isPending || rejectMutation.isPending}
-                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
-                            >
-                              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPendingRejectEntry(entry)}
-                              disabled={approveMutation.isPending || rejectMutation.isPending}
-                              className="inline-flex items-center gap-1 rounded text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                            >
-                              <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
-                              Reject
-                            </button>
+                        ) : editable && (own || canManageThisEntry) ? (
+                          <div className="flex flex-wrap justify-end gap-3">
+                            {own && (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(entry)}
+                                className="inline-flex items-center gap-1 rounded text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                              >
+                                <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+                                Edit
+                              </button>
+                            )}
+                            {canManageThisEntry && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingApproveEntry(entry)}
+                                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded text-xs font-medium text-green-700 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
+                                >
+                                  <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingRejectEntry(entry)}
+                                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                                >
+                                  <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
+                                  Reject
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400">

@@ -27,6 +27,23 @@ export function canManageAnyTimesheetEntry(role: string | null | undefined): boo
 }
 
 /**
+ * Returns true if a manager's Approve/Reject/Edit authority over *another*
+ * user's entry must additionally be scoped to projects they are assigned to
+ * via `Project/GetProjectAssignments` (see
+ * `components/timesheets/TimesheetHistoryView.tsx`'s "own project (assigned
+ * user)" gate, added per the `bugs/timesheet-history` feature request: "if
+ * not his own project (not assign user) then don't add any action for it").
+ *
+ * `SystemAdmin` is exempt — the org-wide administrator role, consistent with
+ * its unrestricted authority everywhere else in this app (e.g.
+ * `ADMIN_ROUTE_PREFIX` gating `/admin/*`) — only `ProjectAdmin`'s authority is
+ * narrowed to the specific projects they manage.
+ */
+export function isProjectScopedTimesheetManager(role: string | null | undefined): boolean {
+  return role === USER_ROLES.PROJECT_ADMIN;
+}
+
+/**
  * Soft, non-blocking daily-hours warning threshold shown on the "My
  * Timesheets" weekly grid (per `docs/HR_System_FE_wireframe.pdf`'s "Daily
  * total exceeds 8h" note). This is a UX nudge, not a hard validation rule —

@@ -111,13 +111,24 @@ interface MockOptions {
   periods?: unknown[];
   projects?: unknown[];
   entries?: unknown[];
+  /** Maps a projectId to its `ProjectAssignment[]` for `/projects/:id/assignments` (used by the ProjectAdmin project-scoping gate). */
+  assignments?: Record<string, unknown[]>;
 }
 
-function mockApi({ periods = [PERIOD], projects = [PROJECT, OTHER_PROJECT], entries = [] }: MockOptions = {}) {
+function mockApi({
+  periods = [PERIOD],
+  projects = [PROJECT, OTHER_PROJECT],
+  entries = [],
+  assignments = {},
+}: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
     if (url === "/projects") return Promise.resolve({ data: { data: projects } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
+    const assignmentsMatch = url.match(/^\/projects\/(.+)\/assignments$/);
+    if (assignmentsMatch) {
+      return Promise.resolve({ data: { data: assignments[assignmentsMatch[1]] ?? [] } });
+    }
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
 }
@@ -330,11 +341,50 @@ describe("TimesheetHistoryView", () => {
     );
   });
 
-  describe("as a manager (ProjectAdmin/SystemAdmin)", () => {
+  it("does not show a Generate Invoice link for a plain User", async () => {
+    mockApi({ entries: [] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByText(/you have no timesheet entries yet/i);
+    expect(screen.queryByRole("link", { name: /generate invoice/i })).not.toBeInTheDocument();
+  });
+
+  describe("as a manager (SystemAdmin — unrestricted, not project-scoped)", () => {
     beforeEach(() => {
       useAuthStore.setState({
-        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.SYSTEM_ADMIN },
       });
+    });
+
+    it("shows a Generate Invoice link routed to /invoices/generate", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute("href", "/invoices/generate");
+    });
+
+    // `bugs/timesheet-history`: "fix the create invoice that showing 400 ...
+    // No approved timesheet entries found in the specified billing period" —
+    // forwarding the applied filters lets `InvoiceGenerateForm` pre-fill the
+    // exact project/range the manager just reviewed.
+    it("forwards the applied Project/Date From/Date To filters as query params on the Generate Invoice link", async () => {
+      mockApi({ entries: [] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByText(/you have no timesheet entries yet/i);
+
+      await user.selectOptions(screen.getByLabelText(/^project$/i), PROJECT_ID);
+      await user.type(screen.getByLabelText(/date from/i), "2025-01-01");
+      await user.type(screen.getByLabelText(/date to/i), "2025-01-31");
+      await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute(
+        "href",
+        `/invoices/generate?projectId=${PROJECT_ID}&billingPeriodStart=2025-01-01&billingPeriodEnd=2025-01-31`
+      );
     });
 
     it("omits the userId filter so it can review every user's entries", async () => {
@@ -353,14 +403,110 @@ describe("TimesheetHistoryView", () => {
       mockApi({ entries: [PENDING_ENTRY, OTHER_USER_PENDING_ENTRY] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
 
-      await screen.findByRole("table");
+      const table = await screen.findByRole("table");
 
       expect(screen.getByRole("columnheader", { name: /^user$/i })).toBeInTheDocument();
       expect(screen.getByText("Alex Kumar")).toBeInTheDocument();
-      // Own pending entry still gets the regular Edit action, not Approve/Reject.
+
+      const otherUsersRow = within(table).getByText("Alex Kumar").closest("tr");
+      if (!otherUsersRow) throw new Error("Could not find Alex Kumar's row");
+      // Someone else's pending entry: Approve/Reject only, no Edit (it isn't the manager's own entry).
+      expect(within(otherUsersRow).getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+      expect(within(otherUsersRow).getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+      expect(within(otherUsersRow).queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Edit, Approve, and Reject together for the manager's own pending entry", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // A manager's own still-pending, unlocked entry: ownership grants Edit
+      // and the manager role independently grants Approve/Reject — both
+      // render together on the same row rather than one excluding the other.
       expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+    });
+
+    it("allows a manager to approve their own pending entry (self-approval) after confirming the dialog", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { message: "Timesheet entry approved successfully." } });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${PENDING_ENTRY_ID}/approve`)
+      );
+      expect(await screen.findByText(/approved successfully/i)).toBeInTheDocument();
+    });
+
+    it("allows a manager to reject their own pending entry (self-rejection) after confirming the dialog", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^reject$/i }));
+
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^reject$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.delete).toHaveBeenCalledWith(`/timesheet-entries/${PENDING_ENTRY_ID}`)
+      );
+      expect(await screen.findByText(/timesheet entry rejected/i)).toBeInTheDocument();
+    });
+
+    it("still allows editing the manager's own entry via Edit even though Approve/Reject render on the same row", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+
+      expect(await screen.findByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
+      // While editing, the row swaps to Save/Cancel — Approve/Reject aren't
+      // shown mid-edit for that row.
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Locked (not Edit/Approve/Reject) for the manager's own already-approved entry", async () => {
+      const ownApprovedEntry = { ...PENDING_ENTRY, isApproved: true };
+      mockApi({ entries: [ownApprovedEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // Even though the manager owns this entry, an already-approved entry is
+      // never actionable — ownership/role gates only apply while `editable`.
+      expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("shows Locked (not Edit/Approve/Reject) for the manager's own entry whose period is locked", async () => {
+      const ownLockedPeriodEntry = { ...PENDING_ENTRY, timesheetPeriodId: LOCKED_PERIOD_ID };
+      mockApi({ periods: [PERIOD, LOCKED_PERIOD], entries: [ownLockedPeriodEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      // Same reasoning as the already-approved case: a locked period freezes
+      // the row regardless of the manager also being the entry's owner.
+      expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
     });
 
     it("approves another user's pending entry after confirming the dialog", async () => {
@@ -480,6 +626,92 @@ describe("TimesheetHistoryView", () => {
 
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
       expect(apiClient.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("as a project-scoped manager (ProjectAdmin — 'own project (assigned user)' gate)", () => {
+    beforeEach(() => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "pm@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+      });
+    });
+
+    it("shows a Generate Invoice link for a ProjectAdmin too", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute("href", "/invoices/generate");
+    });
+
+    it("shows Approve/Reject for another user's pending entry on a project the ProjectAdmin is assigned to", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      expect(await screen.findByRole("button", { name: /^approve$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^reject$/i })).toBeInTheDocument();
+    });
+
+    it("shows Locked (no Approve/Reject) for another user's pending entry on a project the ProjectAdmin is NOT assigned to", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [] }, // ProjectAdmin is not an assigned resource on this project
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
+    it("still shows Edit (but not Approve/Reject) for the ProjectAdmin's own pending entry on an unassigned project", async () => {
+      mockApi({
+        entries: [PENDING_ENTRY], // owned by CURRENT_USER_ID, projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      expect(await screen.findByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+    });
+
+    it("approves another user's pending entry on an assigned project after confirming the dialog", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY],
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { message: "Timesheet entry approved successfully." } });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: /^approve$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${OTHER_USER_PENDING_ENTRY.id}/approve`)
+      );
+    });
+
+    it("requests assignments only for the distinct projects present in the visible entries", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY], // projectId: PROJECT_ID
+        assignments: { [PROJECT_ID]: [{ id: "a1", userId: CURRENT_USER_ID, resourceRoleTypeId: "r1" }] },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(`/projects/${PROJECT_ID}/assignments`)
+      );
+      expect(apiClient.get).not.toHaveBeenCalledWith(`/projects/${OTHER_PROJECT_ID}/assignments`);
     });
   });
 });

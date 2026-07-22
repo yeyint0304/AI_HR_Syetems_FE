@@ -29,9 +29,9 @@ import {
   WEEKDAY_LABELS,
   addDaysToDateOnly,
   compareDateOnly,
-  formatDateOnly,
   formatShortDate,
   formatWeekRangeLabel,
+  getTodayDateOnly,
   getWeekDates,
   getWeekStart,
   isDateOnlyInRange,
@@ -77,7 +77,7 @@ function formatPeriodOptionLabel(period: TimesheetPeriod): string {
 /** Picks a sensible default period: one covering today, else the most recently started one. */
 function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | null {
   if (periods.length === 0) return null;
-  const today = formatDateOnly(new Date());
+  const today = getTodayDateOnly();
   const current = periods.find((period) => isDateOnlyInRange(today, period.periodStart, period.periodEnd));
   if (current) return current;
 
@@ -85,7 +85,7 @@ function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | nul
 }
 
 function resolveDefaultWeekStart(period: TimesheetPeriod): string {
-  const today = formatDateOnly(new Date());
+  const today = getTodayDateOnly();
   const anchor = isDateOnlyInRange(today, period.periodStart, period.periodEnd) ? today : period.periodStart;
   return getWeekStart(anchor);
 }
@@ -112,6 +112,29 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * only `Project/GetProjectList` (all projects) and per-project assignment
  * lookups. This view therefore lists every *active* project as loggable,
  * which is a reasonable default until a user-scoped project list exists.
+ *
+ * Per the `bugs/timesheet-history` feature request ("In My Timesheet can
+ * update date just for present day"): only the *current* calendar day
+ * (`getTodayDateOnly`) is ever loggable/editable in the weekly grid, in
+ * addition to the existing locked-period/approved/out-of-range checks below
+ * — see `isCellLocked`. Past days become read-only once the day has passed
+ * (their previously-saved hours still render, just disabled) and future days
+ * cannot be logged in advance. This applies uniformly to create, update, and
+ * delete (clearing hours), since all three share the same per-cell lock gate
+ * and `handleSaveAll` skips locked cells outright.
+ *
+ * Per the same feature request ("when change the hour then open for
+ * description"): typing a non-empty hours value into a cell automatically
+ * expands that project's task-notes panel (the same panel the wireframe's
+ * "click [info] expands task notes" affordance opens manually) — see the
+ * hours `<input>`'s `onChange` in `TimesheetGrid` and `expandProjectNotes`
+ * below. `taskDescription` is a required field on both
+ * `createTimesheetEntrySchema` and `updateTimesheetEntrySchema`
+ * (`lib/validators/timesheetEntry.validators.ts`), so surfacing the notes
+ * field the moment hours are entered, rather than requiring a separate manual
+ * click, prevents a "Save All" round trip failing only to discover a
+ * description was required all along. The manual info-icon toggle
+ * (`onToggleExpand`) still works as before for reviewing/collapsing notes.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const {
@@ -254,11 +277,24 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     });
   }
 
+  /**
+   * Opens (never closes) a project's task-notes panel — used when the user
+   * enters hours for one of its cells, so the description field they'll need
+   * for "Save All" is already visible. Unlike `onToggleExpand` (the manual
+   * info-icon button), this never collapses an already-open panel out from
+   * under the user while they're mid-edit.
+   */
+  function expandProjectNotes(projectId: string) {
+    setExpandedProjectId(projectId);
+  }
+
   function isCellLocked(date: string, baseline: TimesheetEntry | undefined): boolean {
     if (!selectedPeriod) return true;
     if (selectedPeriod.isLocked) return true;
     if (!isDateOnlyInRange(date, selectedPeriod.periodStart, selectedPeriod.periodEnd)) return true;
-    return Boolean(baseline?.isApproved);
+    if (Boolean(baseline?.isApproved)) return true;
+    // Only today's date is loggable/editable — see the component doc comment.
+    return date !== getTodayDateOnly();
   }
 
   async function handleSaveAll() {
@@ -420,6 +456,11 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       {selectedPeriod?.isLocked && (
         <Alert variant="info">This timesheet period is locked. Entries cannot be added or changed.</Alert>
       )}
+      {selectedPeriod && !selectedPeriod.isLocked && (
+        <Alert variant="info">
+          You can only log or edit hours for today, {formatShortDate(getTodayDateOnly())}. Other days are read-only.
+        </Alert>
+      )}
 
       <div className="max-w-xs">
         <SelectField
@@ -478,6 +519,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
           onToggleExpand={(projectId) =>
             setExpandedProjectId((current) => (current === projectId ? null : projectId))
           }
+          onExpandProject={expandProjectNotes}
           onCellChange={updateDraft}
           isCellLocked={isCellLocked}
         />
@@ -495,6 +537,8 @@ interface TimesheetGridProps {
   fieldErrors: Record<string, string>;
   expandedProjectId: string | null;
   onToggleExpand: (projectId: string) => void;
+  /** Opens (never toggles closed) a project's task-notes panel — see `expandProjectNotes` in `MyTimesheetView`. */
+  onExpandProject: (projectId: string) => void;
   onCellChange: (key: string, patch: Partial<DraftCell>) => void;
   isCellLocked: (date: string, baseline: TimesheetEntry | undefined) => boolean;
 }
@@ -508,6 +552,7 @@ function TimesheetGrid({
   fieldErrors,
   expandedProjectId,
   onToggleExpand,
+  onExpandProject,
   onCellChange,
   isCellLocked,
 }: TimesheetGridProps) {
@@ -610,7 +655,16 @@ function TimesheetGrid({
                                 disabled={locked}
                                 aria-invalid={Boolean(error) || undefined}
                                 aria-describedby={error ? `${key}-error` : undefined}
-                                onChange={(event) => onCellChange(key, { hours: event.target.value })}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  onCellChange(key, { hours: value });
+                                  // Auto-open this project's task-notes panel the moment
+                                  // hours are entered, so the (required) description field
+                                  // is immediately visible — see the component doc comment.
+                                  if (value.trim() !== "") {
+                                    onExpandProject(project.id);
+                                  }
+                                }}
                                 className={`w-16 rounded-md border px-2 py-1.5 text-center text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${
                                   error ? "border-red-400" : "border-slate-300"
                                 }`}

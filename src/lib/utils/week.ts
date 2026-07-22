@@ -46,6 +46,29 @@ export function compareDateOnly(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * Returns "today" as the user's *local* calendar date in `yyyy-MM-dd` format.
+ *
+ * Deliberately does **not** derive this via `formatDateOnly(new Date())`.
+ * `formatDateOnly` calls `Date#toISOString`, which first converts to UTC —
+ * so for anyone east of UTC (e.g. Singapore, UTC+8) that would silently
+ * report *yesterday's* date for the first ~8 hours of every local day, and
+ * for anyone west of UTC it would report *tomorrow's* date late in the
+ * evening. `MyTimesheetView`'s `resolveDefaultPeriod`/`resolveDefaultWeekStart`
+ * used exactly that buggy pattern, which meant the weekly grid could default
+ * to a week that didn't include the real current day — making it look like
+ * today's own entry couldn't be added/edited. Reading the local `Date`
+ * getters (`getFullYear`/`getMonth`/`getDate`) instead keeps "today" aligned
+ * with the calendar date the user actually sees on their own device.
+ */
+export function getTodayDateOnly(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** Clamps a `yyyy-MM-dd` value into the inclusive `[min, max]` range. */
 export function clampDateOnly(value: string, min: string, max: string): string {
   if (compareDateOnly(value, min) < 0) return min;

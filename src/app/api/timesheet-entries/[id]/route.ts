@@ -11,6 +11,7 @@ import {
 import { updateTimesheetEntrySchema } from "@/lib/validators/timesheetEntry.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
+import { canManagerActOnProjectEntry } from "@/lib/server/timesheetEntryAuthorization";
 import type { AuthUser } from "@/types/auth.types";
 import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 
@@ -110,6 +111,11 @@ export async function GET(_request: Request, { params }: RouteParams) {
  * only while it is still pending approval — once `IsApproved` is true the
  * entry is locked, matching the wireframe's "Locked" state for approved rows
  * (`docs/HR_System_FE_wireframe.pdf`, `/timesheets/history`).
+ *
+ * A manager editing *someone else's* entry (not their own) is additionally
+ * scoped to projects they're assigned to, per `canManagerActOnProjectEntry`
+ * (`lib/server/timesheetEntryAuthorization.ts`) — the `bugs/timesheet-history`
+ * "own project (assigned user)" rule. `SystemAdmin` is exempt.
  */
 export async function PUT(request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -150,6 +156,20 @@ export async function PUT(request: Request, { params }: RouteParams) {
   try {
     const result = await fetchOwnedEntry(id, accessToken, currentUser);
     if (!result.ok) return result.response;
+
+    // "Own project (assigned user)" gate: a ProjectAdmin editing *someone
+    // else's* entry must be an assigned resource on that entry's project
+    // (see `lib/server/timesheetEntryAuthorization.ts`). Editing your own
+    // entry is always allowed regardless.
+    if (
+      result.entry.userId !== currentUser.id &&
+      !(await canManagerActOnProjectEntry(currentUser, result.entry.projectId, accessToken))
+    ) {
+      return NextResponse.json(
+        { message: "You do not have permission to update this timesheet entry." },
+        { status: 403 }
+      );
+    }
 
     if (result.entry.isApproved) {
       return NextResponse.json(
@@ -213,6 +233,20 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
     const result = await fetchOwnedEntry(id, accessToken, currentUser);
     if (!result.ok) return result.response;
+
+    // "Own project (assigned user)" gate: a ProjectAdmin rejecting (deleting)
+    // *someone else's* entry must be an assigned resource on that entry's
+    // project (see `lib/server/timesheetEntryAuthorization.ts`). Deleting
+    // your own entry is always allowed regardless.
+    if (
+      result.entry.userId !== currentUser.id &&
+      !(await canManagerActOnProjectEntry(currentUser, result.entry.projectId, accessToken))
+    ) {
+      return NextResponse.json(
+        { message: "You do not have permission to delete this timesheet entry." },
+        { status: 403 }
+      );
+    }
 
     if (result.entry.isApproved) {
       return NextResponse.json(
