@@ -341,11 +341,27 @@ describe("TimesheetHistoryView", () => {
     );
   });
 
+  it("does not show a Generate Invoice link for a plain User", async () => {
+    mockApi({ entries: [] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByText(/you have no timesheet entries yet/i);
+    expect(screen.queryByRole("link", { name: /generate invoice/i })).not.toBeInTheDocument();
+  });
+
   describe("as a manager (SystemAdmin — unrestricted, not project-scoped)", () => {
     beforeEach(() => {
       useAuthStore.setState({
         user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.SYSTEM_ADMIN },
       });
+    });
+
+    it("shows a Generate Invoice link routed to /invoices/generate", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute("href", "/invoices/generate");
     });
 
     it("omits the userId filter so it can review every user's entries", async () => {
@@ -595,6 +611,14 @@ describe("TimesheetHistoryView", () => {
       useAuthStore.setState({
         user: { id: CURRENT_USER_ID, email: "pm@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
       });
+    });
+
+    it("shows a Generate Invoice link for a ProjectAdmin too", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const link = await screen.findByRole("link", { name: /generate invoice/i });
+      expect(link).toHaveAttribute("href", "/invoices/generate");
     });
 
     it("shows Approve/Reject for another user's pending entry on a project the ProjectAdmin is assigned to", async () => {

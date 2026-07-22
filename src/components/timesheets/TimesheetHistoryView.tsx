@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Lock, Pencil, XCircle } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Lock, Pencil, Receipt, XCircle } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -27,6 +28,7 @@ import {
   MAX_ENTRY_HOURS,
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
+import { canManageInvoices } from "@/lib/constants/invoice.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
 import { compareDateOnly } from "@/lib/utils/week";
@@ -143,6 +145,15 @@ function sumHours(entries: TimesheetEntry[]): number {
  * as a delete of the pending entry (see `rejectTimesheetEntryRequest` for the
  * full rationale) — the employee re-logs the time on `/timesheets` if still
  * needed. Like Approve, Reject is confirmed via `ConfirmDialog`.
+ *
+ * A "Generate Invoice" link (gated by `canManageInvoices`, same
+ * SystemAdmin/ProjectAdmin roles as `canApprove`) sits in the page header,
+ * routing to `/invoices/generate`. Per `INV-01`'s "includes approved entries
+ * only" rule, this page is where those entries get approved in the first
+ * place, so the link is this feature's direct answer to the
+ * `bugs/timesheet-history` request "how can i add new invoice" — a manager
+ * finishing their review here previously had no in-context way to jump into
+ * invoicing and had to know to navigate to `/invoices` via the sidebar first.
  */
 export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProps) {
   const { user } = useAuth();
@@ -151,6 +162,15 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   // keeps unrestricted Approve/Reject authority (see the component doc
   // comment's "Project-assignment scope for Approve/Reject" section).
   const isProjectScopedManager = canApprove && isProjectScopedTimesheetManager(user?.role);
+  // Same SystemAdmin/ProjectAdmin role set as `canApprove`
+  // (`INVOICE_MANAGER_ROLES` === `TIMESHEET_ENTRY_MANAGER_ROLES`), but checked
+  // via the Invoice module's own permission constant rather than reusing
+  // `canApprove` — this gates a shortcut into `/invoices/generate`, not a
+  // timesheet-entry action, and the two permission sets could diverge later.
+  // Answers the `bugs/timesheet-history` feature request ("how can i add new
+  // invoice"): once approved entries exist here, this link is the entry point
+  // into invoicing them, mirroring the "+ Generate Invoice" button on `/invoices`.
+  const canGenerateInvoice = canManageInvoices(user?.role);
 
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -410,13 +430,24 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Timesheet History</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {canApprove
-            ? "Review, approve, or reject timesheet entries across all users."
-            : "View all past timesheet entries."}
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Timesheet History</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {canApprove
+              ? "Review, approve, or reject timesheet entries across all users."
+              : "View all past timesheet entries."}
+          </p>
+        </div>
+        {canGenerateInvoice && (
+          <Link
+            href="/invoices/generate"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <Receipt aria-hidden="true" className="h-4 w-4" />
+            Generate Invoice
+          </Link>
+        )}
       </div>
 
       {saveSuccess && <Alert variant="success">{saveSuccess}</Alert>}
