@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guidSchema } from "@/lib/validators/shared.validators";
 
 /**
  * Shared Zod schemas for the Project feature. Used both client-side (via
@@ -49,9 +50,22 @@ export const updateProjectSchema = z
   });
 export type UpdateProjectFormValues = z.infer<typeof updateProjectSchema>;
 
-/** Matches `Project/AssignResource`. */
+/**
+ * Matches `Project/AssignResource`.
+ *
+ * Uses the lenient `guidSchema` (not `z.uuid()`) for the same reason
+ * documented on `lib/validators/shared.validators.ts`: the backend's seeded
+ * `ResourceRoleType` ids (`docs/HR_System_BE.postman_collection.json`, e.g.
+ * `44444444-4444-4444-4444-444444444401`) don't satisfy `z.uuid()`'s RFC
+ * 9562/4122 variant-nibble check, which was turning a valid "Resource role"
+ * selection on the Project Assignments screen into a 400 ("Please correct
+ * the highlighted fields.") both client-side (react-hook-form validation)
+ * and server-side (`POST /api/projects/[id]/assignments` re-validates with
+ * this same schema) — the exact class of bug already fixed for
+ * `createUserSchema.roleId` and `timesheetEntryListQuerySchema`.
+ */
 export const assignResourceSchema = z.object({
-  userId: z.uuid("Enter a valid User ID (GUID)."),
-  resourceRoleTypeId: z.uuid("Select a resource role."),
+  userId: guidSchema("Select a user."),
+  resourceRoleTypeId: guidSchema("Select a resource role."),
 });
 export type AssignResourceFormValues = z.infer<typeof assignResourceSchema>;

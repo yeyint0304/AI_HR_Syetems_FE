@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guidSchema } from "@/lib/validators/shared.validators";
 
 /**
  * Shared Zod schemas for the Auth feature. Used both client-side (via
@@ -25,7 +26,7 @@ export const updateProfileSchema = z.object({
   lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
   email: z.email("Enter a valid email address."),
   countryId: z
-    .union([z.uuid("Enter a valid Country ID (GUID)."), z.literal("")])
+    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
     .optional()
     .nullable(),
 });
@@ -55,9 +56,9 @@ export const createUserSchema = z.object({
   lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
   employeeId: z.string().trim().max(50, "Employee ID is too long.").optional().or(z.literal("")),
   countryId: z
-    .union([z.uuid("Enter a valid Country ID (GUID)."), z.literal("")])
+    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
     .optional()
     .nullable(),
-  roleId: z.uuid("Select a valid Role ID (GUID)."),
+  roleId: guidSchema("Select a role."),
 });
 export type CreateUserFormValues = z.infer<typeof createUserSchema>;

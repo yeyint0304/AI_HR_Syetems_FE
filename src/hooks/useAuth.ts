@@ -1,10 +1,12 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   changePasswordRequest,
   createUserRequest,
+  getRolesRequest,
+  getUnassignedUsersRequest,
   loginRequest,
   logoutRequest,
   updateProfileRequest,
@@ -85,5 +87,32 @@ export function useChangePassword() {
 export function useCreateUser() {
   return useMutation({
     mutationFn: (payload: CreateUserRequest) => createUserRequest(payload),
+  });
+}
+
+/** Read-only reference-data query key for the "Role" dropdown (`Create User` form). */
+export const ROLES_QUERY_KEY = ["roles"] as const;
+
+/** Read-only system-role reference data (used by the Create User "Role" dropdown). */
+export function useRoles() {
+  return useQuery({
+    queryKey: ROLES_QUERY_KEY,
+    queryFn: getRolesRequest,
+  });
+}
+
+/**
+ * Read-only reference-data query key for the "User" dropdown on the Project
+ * Assignments form. Exported so `useProjects.ts#useAssignResource` can
+ * invalidate it once a user has been assigned — that user should stop
+ * appearing as "unassigned" for the next project the caller assigns to.
+ */
+export const UNASSIGNED_USERS_QUERY_KEY = ["unassigned-users"] as const;
+
+/** Read-only unassigned-user reference data (used by the Project Assignments "User" dropdown). */
+export function useUnassignedUsers() {
+  return useQuery({
+    queryKey: UNASSIGNED_USERS_QUERY_KEY,
+    queryFn: getUnassignedUsersRequest,
   });
 }

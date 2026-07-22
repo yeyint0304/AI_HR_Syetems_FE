@@ -213,5 +213,27 @@ describe("projectResponseMappers", () => {
       const result = mapBackendResourceRoleTypeList([{ Id: "r1", Name: "Senior Developer" }]);
       expect(result).toHaveLength(1);
     });
+
+    it("unwraps the real backend's paginated Data.Items envelope (per the saved ResourceRoleType/GetAllResourceRoleTypes example)", () => {
+      const result = mapBackendResourceRoleTypeList({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          Items: [
+            { Id: "r1", Name: "Senior Developer", Description: "Senior dev" },
+            { Id: "r2", Name: "Junior Developer", Description: "Junior dev" },
+          ],
+          TotalCount: 2,
+          Page: 1,
+          PageSize: 100,
+        },
+      });
+
+      expect(result).toEqual([
+        { id: "r1", name: "Senior Developer", description: "Senior dev" },
+        { id: "r2", name: "Junior Developer", description: "Junior dev" },
+      ]);
+    });
   });
 });

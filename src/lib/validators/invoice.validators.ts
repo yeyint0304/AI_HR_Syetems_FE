@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { INVOICE_STATUSES } from "@/lib/constants/invoice.constants";
+import { guidSchema } from "@/lib/validators/shared.validators";
 
 /**
  * Shared Zod schemas for the Invoice feature. Used both client-side (via
@@ -88,13 +89,22 @@ export type UpdateInvoiceFormValues = z.infer<typeof updateInvoiceSchema>;
 /**
  * Server-side query schema for `GET /api/invoices`, matching the params
  * documented on `Invoice/GetAllInvoices` (all optional).
+ *
+ * Uses the lenient `guidSchema` (not `z.uuid()`) for `projectId`/`currencyId`
+ * — see `lib/validators/shared.validators.ts`. The backend's seeded Currency
+ * ids (`docs/HR_System_BE.postman_collection.json`, e.g.
+ * `33333333-3333-3333-3333-333333333301`) don't satisfy `z.uuid()`'s RFC
+ * 9562/4122 variant-nibble check, which was turning a valid "Project"/
+ * currency filter into a 400 ("Invalid filter parameters.") — the same class
+ * of bug already fixed for `createUserSchema.roleId` and
+ * `timesheetEntryListQuerySchema`.
  */
 export const invoiceListQuerySchema = z.object({
-  projectId: z.uuid("projectId must be a valid GUID.").optional(),
+  projectId: guidSchema("projectId must be a valid GUID.").optional(),
   status: z.enum(INVOICE_STATUSES as [string, ...string[]]).optional(),
   startDate: z.string().regex(DATE_ONLY_PATTERN, "startDate must use the YYYY-MM-DD format.").optional(),
   endDate: z.string().regex(DATE_ONLY_PATTERN, "endDate must use the YYYY-MM-DD format.").optional(),
-  currencyId: z.uuid("currencyId must be a valid GUID.").optional(),
+  currencyId: guidSchema("currencyId must be a valid GUID.").optional(),
   page: z.coerce.number("page must be a number.").int().min(1).optional(),
   pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(200).optional(),
 });

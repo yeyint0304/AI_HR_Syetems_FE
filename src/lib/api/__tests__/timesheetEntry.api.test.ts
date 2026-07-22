@@ -1,9 +1,11 @@
 import { apiClient } from "@/lib/api/axiosInstance";
 import {
+  approveTimesheetEntryRequest,
   createTimesheetEntryRequest,
   deleteTimesheetEntryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
+  rejectTimesheetEntryRequest,
   updateTimesheetEntryRequest,
 } from "@/lib/api/timesheetEntry.api";
 
@@ -86,6 +88,22 @@ describe("timesheetEntry.api", () => {
     (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
 
     await deleteTimesheetEntryRequest("1");
+
+    expect(apiClient.delete).toHaveBeenCalledWith("/timesheet-entries/1");
+  });
+
+  it("approveTimesheetEntryRequest puts to the entry's approve endpoint", async () => {
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: {} });
+
+    await approveTimesheetEntryRequest("1");
+
+    expect(apiClient.put).toHaveBeenCalledWith("/timesheet-entries/1/approve");
+  });
+
+  it("rejectTimesheetEntryRequest deletes the entry by id (no dedicated reject endpoint)", async () => {
+    (apiClient.delete as jest.Mock).mockResolvedValueOnce({ data: {} });
+
+    await rejectTimesheetEntryRequest("1");
 
     expect(apiClient.delete).toHaveBeenCalledWith("/timesheet-entries/1");
   });

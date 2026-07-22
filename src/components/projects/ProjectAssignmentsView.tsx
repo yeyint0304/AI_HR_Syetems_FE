@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/Button";
-import { TextField } from "@/components/ui/TextField";
 import { SelectField } from "@/components/ui/SelectField";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -19,6 +18,7 @@ import {
   useRemoveResource,
 } from "@/hooks/useProjects";
 import { useResourceRoleTypes } from "@/hooks/useResourceRoleTypes";
+import { useUnassignedUsers } from "@/hooks/useAuth";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { ProjectAssignment } from "@/types/project.types";
 
@@ -36,13 +36,16 @@ function getInitials(name?: string): string {
 /**
  * `/projects/[id]/assignments` — "User Assignments" screen per the
  * wireframe: assigned-users list with per-row Remove, plus an "Add User to
- * Project" form (User ID + Resource role -> `Project/AssignResource`).
+ * Project" form (User select + Resource role select -> `Project/AssignResource`).
  *
- * There is no "list all users" endpoint in `docs/HR_System_BE.postman_collection.json`,
- * so — following the same precedent as `CreateUserForm`'s "Role ID"/"Country ID"
- * fields — the user to assign is referenced by GUID via a text field rather
- * than a fetched dropdown. The "Resource role" field IS backed by a live
- * dropdown, since `ResourceRoleType/GetAllResourceRoleTypes` does exist.
+ * Both selects are backed by live reference-data dropdowns:
+ *   - "User" is sourced from `Auth/GetUserList`
+ *     (`hooks/useAuth.ts#useUnassignedUsers`) — note this only returns users
+ *     with *no* project assignment at all, backend-wide, so a user already
+ *     assigned to a different project won't appear here (a limitation of the
+ *     documented backend contract, not this screen).
+ *   - "Resource role" is sourced from `ResourceRoleType/GetAllResourceRoleTypes`
+ *     (`hooks/useResourceRoleTypes.ts`).
  */
 export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProps) {
   const [formError, setFormError] = useState<string | null>(null);
@@ -60,13 +63,18 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
     refetch,
   } = useProjectAssignments(projectId);
   const { data: resourceRoleTypes, isLoading: isRoleTypesLoading } = useResourceRoleTypes();
+  const {
+    data: unassignedUsers,
+    isLoading: isUnassignedUsersLoading,
+    isError: isUnassignedUsersError,
+    error: unassignedUsersError,
+  } = useUnassignedUsers();
 
   const assignResourceMutation = useAssignResource(projectId);
   const removeResourceMutation = useRemoveResource(projectId);
 
   const {
     control,
-    register,
     handleSubmit,
     reset,
     formState: { errors },
@@ -185,14 +193,51 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
           </div>
         )}
 
+        {isUnassignedUsersError && (
+          <div className="mt-4">
+            <Alert variant="error">
+              {getApiErrorMessage(unassignedUsersError, "Unable to load users available to assign.")}
+            </Alert>
+          </div>
+        )}
+
+        {!isUnassignedUsersLoading && !isUnassignedUsersError && (unassignedUsers?.length ?? 0) === 0 && (
+          <div className="mt-4">
+            <Alert variant="info">
+              There are no unassigned users available right now — every user already belongs to a
+              project.
+            </Alert>
+          </div>
+        )}
+
         <form noValidate onSubmit={onSubmit} className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <TextField
-              label="User ID"
-              hint="GUID of the user to assign."
-              autoComplete="off"
-              error={errors.userId?.message}
-              {...register("userId")}
+            <Controller
+              control={control}
+              name="userId"
+              render={({ field }) => (
+                <SelectField
+                  label="User"
+                  name={field.name}
+                  ref={field.ref}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChange={field.onChange}
+                  disabled={isUnassignedUsersLoading || (unassignedUsers?.length ?? 0) === 0}
+                  placeholder={
+                    isUnassignedUsersLoading
+                      ? "Loading users…"
+                      : (unassignedUsers?.length ?? 0) === 0
+                        ? "No unassigned users available"
+                        : "Select a user..."
+                  }
+                  error={errors.userId?.message}
+                  options={(unassignedUsers ?? []).map((candidate) => ({
+                    value: candidate.id,
+                    label: `${candidate.firstName} ${candidate.lastName} — ${candidate.email}`.trim(),
+                  }))}
+                />
+              )}
             />
           </div>
           <div className="flex-1">
@@ -218,7 +263,11 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
               )}
             />
           </div>
-          <Button type="submit" isLoading={assignResourceMutation.isPending}>
+          <Button
+            type="submit"
+            isLoading={assignResourceMutation.isPending}
+            disabled={(unassignedUsers?.length ?? 0) === 0}
+          >
             Add User
           </Button>
         </form>

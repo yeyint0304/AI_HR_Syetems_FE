@@ -2,10 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  approveTimesheetEntryRequest,
   createTimesheetEntryRequest,
   deleteTimesheetEntryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
+  rejectTimesheetEntryRequest,
   updateTimesheetEntryRequest,
 } from "@/lib/api/timesheetEntry.api";
 import type {
@@ -69,6 +71,40 @@ export function useDeleteTimesheetEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteTimesheetEntryRequest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TIMESHEET_ENTRIES_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Approves a pending timesheet entry. Restricted server-side to
+ * SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`) — see
+ * `app/api/timesheet-entries/[id]/approve/route.ts`. Used by
+ * `TimesheetHistoryView` for the manager-facing approval workflow.
+ */
+export function useApproveTimesheetEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => approveTimesheetEntryRequest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TIMESHEET_ENTRIES_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Rejects a pending timesheet entry. Restricted server-side to
+ * SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`) — see
+ * `rejectTimesheetEntryRequest` for why this maps onto the same
+ * `DELETE /api/timesheet-entries/[id]` Route Handler as the self-service
+ * delete flow. Used by `TimesheetHistoryView` alongside
+ * `useApproveTimesheetEntry` for the manager-facing review workflow.
+ */
+export function useRejectTimesheetEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => rejectTimesheetEntryRequest(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TIMESHEET_ENTRIES_QUERY_KEY });
     },

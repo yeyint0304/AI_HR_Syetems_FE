@@ -5,7 +5,7 @@ import { UpdateProfileForm } from "@/components/auth/UpdateProfileForm";
 import { apiClient } from "@/lib/api/axiosInstance";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
-  apiClient: { post: jest.fn(), put: jest.fn() },
+  apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
 }));
 
 const mockRefresh = jest.fn();
@@ -27,9 +27,18 @@ const initialValues = {
   countryId: null,
 };
 
+const COUNTRIES = [
+  { id: "22222222-2222-2222-2222-222222222201", code: "SG", name: "Singapore" },
+  { id: "22222222-2222-2222-2222-222222222202", code: "US", name: "United States" },
+];
+
 describe("UpdateProfileForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/countries") return Promise.resolve({ data: { data: COUNTRIES } });
+      return Promise.reject(new Error(`Unhandled GET ${url}`));
+    });
   });
 
   it("renders fields pre-filled with the initial values", () => {
@@ -37,6 +46,29 @@ describe("UpdateProfileForm", () => {
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Jane");
     expect(screen.getByLabelText(/last name/i)).toHaveValue("Doe");
     expect(screen.getByLabelText(/email address/i)).toHaveValue("jane@example.com");
+  });
+
+  it("renders a Country select populated from the countries endpoint (GET /countries)", async () => {
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+
+    expect(await screen.findByRole("option", { name: "Singapore (SG)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "United States (US)" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^country$/i).tagName).toBe("SELECT");
+  });
+
+  it("shows an error and disables the Country select when the countries request fails", async () => {
+    (apiClient.get as jest.Mock).mockImplementation((url: string) =>
+      url === "/countries"
+        ? Promise.reject({
+            isAxiosError: true,
+            response: { data: { message: "Unable to load countries." } },
+          })
+        : Promise.reject(new Error(`Unhandled GET ${url}`))
+    );
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+
+    expect(await screen.findByText(/unable to load countries/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^country$/i)).toBeDisabled();
   });
 
   it("disables the submit button until the form is dirty", async () => {
