@@ -399,6 +399,18 @@ describe("TimesheetHistoryView", () => {
       expect(screen.getByRole("button", { name: /^approve$/i })).toBeInTheDocument();
     });
 
+    it("shows Locked (not Approve/Reject) for another user's pending entry whose period is locked", async () => {
+      const otherUsersLockedPeriodEntry = { ...OTHER_USER_PENDING_ENTRY, timesheetPeriodId: LOCKED_PERIOD_ID };
+      mockApi({ periods: [PERIOD, LOCKED_PERIOD], entries: [otherUsersLockedPeriodEntry] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^approve$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^reject$/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+    });
+
     it("does not show an Approve action for another user's already-approved entry", async () => {
       const approvedOtherUserEntry = { ...OTHER_USER_PENDING_ENTRY, isApproved: true };
       mockApi({ entries: [approvedOtherUserEntry] });

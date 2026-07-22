@@ -85,6 +85,24 @@ function sumHours(entries: TimesheetEntry[]): number {
  * Approve/Reject, avoiding a self-approval workflow the backlog never
  * describes.
  *
+ * Per row, for a still-pending (`!isApproved`) entry, exactly one of three
+ * things renders in the Actions column, and the difference is driven purely
+ * by ownership + role + the entry's period lock state (`isEntryEditable`),
+ * never by anything else:
+ *   - **Edit** — shown only when it's the signed-in user's *own* entry and
+ *     `isEntryEditable` (pending and its period isn't locked).
+ *   - **Approve/Reject** — shown only for a manager (`canApprove`) viewing
+ *     *someone else's* entry, and only while that same `isEntryEditable`
+ *     check passes. Reusing `isEntryEditable` here (rather than a bare
+ *     `!entry.isApproved` check) is deliberate: once a timesheet period is
+ *     locked, every entry inside it — regardless of whose it is — should
+ *     freeze the same way Edit already does, so Approve/Reject can't act on
+ *     an entry whose period a manager has since locked.
+ *   - **Locked** — everything else (an approved entry, a locked-period
+ *     entry, or another user's entry viewed by a non-manager, who never
+ *     reaches this row at all since the entries query is scoped to their
+ *     own `userId`).
+ *
  * "Reject" (`useRejectTimesheetEntry`) sends a pending entry back for
  * correction. The backend's Timesheet Entry module documents no dedicated
  * reject/deny endpoint, only Approve and Delete, so rejection is implemented
@@ -185,6 +203,10 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     [visibleEntries]
   );
 
+  // Shared by both the owner's Edit action and a manager's Approve/Reject
+  // actions below (see the component doc comment) so a locked period always
+  // reads as "Locked", no matter who is looking at the entry or which of the
+  // two actions would otherwise apply.
   function isEntryEditable(entry: TimesheetEntry): boolean {
     if (entry.isApproved) return false;
     // Defense-in-depth: if the owning period can't be resolved (still loading,
@@ -521,7 +543,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                             <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
                             Edit
                           </button>
-                        ) : !own && canApprove && !entry.isApproved ? (
+                        ) : !own && canApprove && editable ? (
                           <div className="flex justify-end gap-3">
                             <button
                               type="button"
