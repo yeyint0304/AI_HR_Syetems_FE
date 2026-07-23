@@ -81,6 +81,32 @@ export interface UnassignedUser {
   employeeId?: string | null;
 }
 
+/**
+ * Query params for `GET /api/auth/unassigned-users`, backing the searchable,
+ * scroll-paginated "User" combobox on the Project Assignments screen
+ * (`components/ui/SearchableSelectField.tsx` +
+ * `hooks/useAuth.ts#useUnassignedUsersInfinite`). See
+ * `app/api/auth/unassigned-users/route.ts` for how these are applied against
+ * `Auth/GetUserList`, which — unlike `Country/GetAllCountries` and friends —
+ * documents no query parameters at all in
+ * `docs/HR_System_BE.postman_collection.json`.
+ */
+export interface UnassignedUserListParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** One page of `UnassignedUser` results, as returned by `GET /api/auth/unassigned-users`. */
+export interface UnassignedUserPage {
+  items: UnassignedUser[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  /** Whether a next page is worth requesting (`page * pageSize < totalCount`, at minimum). */
+  hasMore: boolean;
+}
+
 export interface ApiErrorBody {
   message?: string;
   errors?: Record<string, string[]>;

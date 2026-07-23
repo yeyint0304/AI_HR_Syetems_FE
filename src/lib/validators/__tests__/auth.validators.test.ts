@@ -3,6 +3,7 @@ import {
   changePasswordSchema,
   updateProfileSchema,
   createUserSchema,
+  unassignedUserQuerySchema,
 } from "@/lib/validators/auth.validators";
 
 describe("loginSchema", () => {
@@ -125,5 +126,44 @@ describe("createUserSchema", () => {
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.message === "Select a role.")).toBe(true);
     }
+  });
+});
+
+describe("unassignedUserQuerySchema", () => {
+  it("accepts an empty query (all fields optional)", () => {
+    expect(unassignedUserQuerySchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts a valid search/page/pageSize combination and coerces numeric strings", () => {
+    const result = unassignedUserQuerySchema.safeParse({ search: "jamie", page: "2", pageSize: "20" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ search: "jamie", page: 2, pageSize: 20 });
+    }
+  });
+
+  it("trims the search term", () => {
+    const result = unassignedUserQuerySchema.safeParse({ search: "  jamie  " });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.search).toBe("jamie");
+    }
+  });
+
+  it("rejects a search term longer than 100 characters", () => {
+    const result = unassignedUserQuerySchema.safeParse({ search: "a".repeat(101) });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects page numbers below 1", () => {
+    expect(unassignedUserQuerySchema.safeParse({ page: 0 }).success).toBe(false);
+  });
+
+  it("rejects a pageSize above 50", () => {
+    expect(unassignedUserQuerySchema.safeParse({ pageSize: 51 }).success).toBe(false);
+  });
+
+  it("rejects a non-numeric page", () => {
+    expect(unassignedUserQuerySchema.safeParse({ page: "not-a-number" }).success).toBe(false);
   });
 });

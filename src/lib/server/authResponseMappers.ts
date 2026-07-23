@@ -1,5 +1,5 @@
 import "server-only";
-import type { Role, UnassignedUser } from "@/types/auth.types";
+import type { Role, UnassignedUser, UnassignedUserPage } from "@/types/auth.types";
 import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
 
@@ -115,4 +115,60 @@ export function mapBackendUnassignedUserList(raw: unknown): UnassignedUser[] {
   return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendUnassignedUser)
     .filter((user): user is UnassignedUser => user !== null);
+}
+
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+interface RawUnassignedUserPage {
+  TotalCount?: number;
+  totalCount?: number;
+  PageNo?: number;
+  pageNo?: number;
+  Page?: number;
+  page?: number;
+  PageSize?: number;
+  pageSize?: number;
+}
+
+/**
+ * Maps `Auth/GetUserList`'s response into a paginated `UnassignedUserPage`,
+ * backing the scroll-paginated "User" combobox
+ * (`hooks/useAuth.ts#useUnassignedUsersInfinite`). Tolerates both response
+ * shapes seen for this endpoint (see `mapBackendUnassignedUserList`'s doc
+ * comment): a bare `Data` array (per the saved Postman example — treated as
+ * the complete result set, so `hasMore` is `false`) and the live backend's
+ * actual `Data: { TotalCount, PageNo, PageSize, Items: [...] }` envelope
+ * (`hasMore` derived from `page * pageSize < totalCount`).
+ *
+ * `requestedPage`/`requestedPageSize` are used as fallbacks when the
+ * backend's response doesn't echo them back explicitly.
+ */
+export function mapBackendUnassignedUserPage(
+  raw: unknown,
+  requestedPage: number,
+  requestedPageSize: number
+): UnassignedUserPage {
+  const envelope = readBackendEnvelope(raw);
+  const payload = envelope.isSuccess ? envelope.data : raw;
+
+  const items = extractArray(payload)
+    .map(mapBackendUnassignedUser)
+    .filter((user): user is UnassignedUser => user !== null);
+
+  const r = (typeof payload === "object" && payload !== null ? payload : {}) as RawUnassignedUserPage;
+  const page = asFiniteNumber(r.PageNo ?? r.pageNo ?? r.Page ?? r.page, requestedPage);
+  const pageSize = asFiniteNumber(r.PageSize ?? r.pageSize, requestedPageSize);
+  const totalCountRaw = r.TotalCount ?? r.totalCount;
+  const isPaginatedShape = typeof totalCountRaw === "number";
+  const totalCount = isPaginatedShape ? totalCountRaw : items.length;
+
+  return {
+    items,
+    page,
+    pageSize,
+    totalCount,
+    hasMore: isPaginatedShape && items.length > 0 && page * pageSize < totalCount,
+  };
 }

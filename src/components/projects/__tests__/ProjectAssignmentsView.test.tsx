@@ -55,14 +55,30 @@ const UNASSIGNED_USERS = [
   },
 ];
 
+function unassignedUsersPage(items: unknown[]) {
+  return { items, page: 1, pageSize: 20, totalCount: items.length, hasMore: false };
+}
+
 function mockGetResponses(unassignedUsers: unknown[] = UNASSIGNED_USERS) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
     if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [ASSIGNMENT] } });
     if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
-    if (url === "/auth/unassigned-users") return Promise.resolve({ data: { data: unassignedUsers } });
+    if (url === "/auth/unassigned-users") {
+      return Promise.resolve({ data: { data: unassignedUsersPage(unassignedUsers) } });
+    }
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
+}
+
+function getUserCombobox() {
+  return screen.getByRole("combobox", { name: /^user$/i });
+}
+
+/** Opens the "User" combobox and returns its listbox. */
+async function openUserCombobox(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(getUserCombobox());
+  return screen.getByRole("listbox", { name: /^user$/i });
 }
 
 describe("ProjectAssignmentsView", () => {
@@ -85,7 +101,9 @@ describe("ProjectAssignmentsView", () => {
       if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
       if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [] } });
       if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
-      if (url === "/auth/unassigned-users") return Promise.resolve({ data: { data: UNASSIGNED_USERS } });
+      if (url === "/auth/unassigned-users") {
+        return Promise.resolve({ data: { data: unassignedUsersPage(UNASSIGNED_USERS) } });
+      }
       return Promise.reject(new Error(`Unhandled GET ${url}`));
     });
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
@@ -93,7 +111,7 @@ describe("ProjectAssignmentsView", () => {
     expect(await screen.findByText(/no users are currently assigned/i)).toBeInTheDocument();
   });
 
-  it("populates the User select from the unassigned-users endpoint and assigns a user via the Add User form", async () => {
+  it("populates the User combobox from the unassigned-users endpoint and assigns a user via the Add User form", async () => {
     mockGetResponses();
     (apiClient.post as jest.Mock).mockResolvedValueOnce({
       data: { data: { id: "a2", userId: UNASSIGNED_USER_ID, resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR } },
@@ -102,8 +120,9 @@ describe("ProjectAssignmentsView", () => {
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
 
     await screen.findByText("Alex Kumar");
-    expect(await screen.findByRole("option", { name: /jamie smith/i })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText(/^user$/i), UNASSIGNED_USER_ID);
+    const listbox = await openUserCombobox(user);
+    await user.click(within(listbox).getByRole("option", { name: /jamie smith/i }));
+
     await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
     await user.click(screen.getByRole("button", { name: /add user/i }));
 
@@ -112,6 +131,23 @@ describe("ProjectAssignmentsView", () => {
         userId: UNASSIGNED_USER_ID,
         resourceRoleTypeId: ROLE_TYPE_ID_JUNIOR,
       })
+    );
+  });
+
+  it("filters the User combobox as the caller types (debounced)", async () => {
+    mockGetResponses();
+    const user = userEvent.setup();
+    renderWithClient(<ProjectAssignmentsView projectId="1" />);
+
+    await screen.findByText("Alex Kumar");
+    await openUserCombobox(user);
+    await user.type(getUserCombobox(), "jamie");
+
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith(
+        "/auth/unassigned-users",
+        expect.objectContaining({ params: expect.objectContaining({ search: "jamie" }) })
+      )
     );
   });
 
@@ -124,12 +160,12 @@ describe("ProjectAssignmentsView", () => {
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
 
     await screen.findByText("Alex Kumar");
-    await screen.findByRole("option", { name: /jamie smith/i });
+    const listbox = await openUserCombobox(user);
+    await user.click(within(listbox).getByRole("option", { name: /jamie smith/i }));
     const unassignedUsersCallsBefore = (apiClient.get as jest.Mock).mock.calls.filter(
       ([url]) => url === "/auth/unassigned-users"
     ).length;
 
-    await user.selectOptions(screen.getByLabelText(/^user$/i), UNASSIGNED_USER_ID);
     await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
     await user.click(screen.getByRole("button", { name: /add user/i }));
 
@@ -148,7 +184,7 @@ describe("ProjectAssignmentsView", () => {
     renderWithClient(<ProjectAssignmentsView projectId="1" />);
 
     await screen.findByText("Alex Kumar");
-    await screen.findByRole("option", { name: /jamie smith/i });
+    await openUserCombobox(user);
     await user.selectOptions(screen.getByLabelText(/resource role/i), ROLE_TYPE_ID_JUNIOR);
     await user.click(screen.getByRole("button", { name: /add user/i }));
 
@@ -164,8 +200,46 @@ describe("ProjectAssignmentsView", () => {
     expect(
       await screen.findByText(/no unassigned users available right now/i)
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/^user$/i)).toBeDisabled();
+    expect(getUserCombobox()).toBeDisabled();
     expect(screen.getByRole("button", { name: /add user/i })).toBeDisabled();
+  });
+
+  it("shows a load error with a retry action inside the User combobox when the unassigned-users request fails, without disabling the form", async () => {
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
+      if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [ASSIGNMENT] } });
+      if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
+      if (url === "/auth/unassigned-users") {
+        return Promise.reject({
+          isAxiosError: true,
+          response: { status: 500, data: { message: "Server error" } },
+        });
+      }
+      return Promise.reject(new Error(`Unhandled GET ${url}`));
+    });
+    const user = userEvent.setup();
+    renderWithClient(<ProjectAssignmentsView projectId="1" />);
+
+    await screen.findByText("Alex Kumar");
+    const combobox = getUserCombobox();
+    expect(combobox).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /add user/i })).not.toBeDisabled();
+    expect(screen.queryByText(/no unassigned users available right now/i)).not.toBeInTheDocument();
+
+    const listbox = await openUserCombobox(user);
+    expect(await within(listbox).findByRole("alert")).toHaveTextContent(/server error/i);
+
+    const unassignedUsersCallsBefore = (apiClient.get as jest.Mock).mock.calls.filter(
+      ([url]) => url === "/auth/unassigned-users"
+    ).length;
+    await user.click(within(listbox).getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => {
+      const unassignedUsersCallsAfter = (apiClient.get as jest.Mock).mock.calls.filter(
+        ([url]) => url === "/auth/unassigned-users"
+      ).length;
+      expect(unassignedUsersCallsAfter).toBeGreaterThan(unassignedUsersCallsBefore);
+    });
   });
 
   it("removes an assignment after confirming in the dialog", async () => {

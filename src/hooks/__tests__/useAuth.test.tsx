@@ -8,7 +8,7 @@ import {
   useLogin,
   useLogout,
   useRoles,
-  useUnassignedUsers,
+  useUnassignedUsersInfinite,
   useUpdateProfile,
 } from "@/hooks/useAuth";
 import { useAuthStore } from "@/stores/auth.store";
@@ -202,17 +202,94 @@ describe("useRoles", () => {
   });
 });
 
-describe("useUnassignedUsers", () => {
+describe("useUnassignedUsersInfinite", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("resolves with the fetched unassigned-user list", async () => {
-    const users = [
-      { id: "user-1", username: "jsmith", email: "jsmith@hrsystem.com", firstName: "Jamie", lastName: "Smith" },
-    ];
-    (getUnassignedUsersRequest as jest.Mock).mockResolvedValueOnce(users);
-    const { result } = renderHook(() => useUnassignedUsers(), { wrapper: withQueryClient() });
+  const user = {
+    id: "user-1",
+    username: "jsmith",
+    email: "jsmith@hrsystem.com",
+    firstName: "Jamie",
+    lastName: "Smith",
+  };
+
+  it("resolves with the first fetched page of unassigned users", async () => {
+    (getUnassignedUsersRequest as jest.Mock).mockResolvedValueOnce({
+      items: [user],
+      page: 1,
+      pageSize: 20,
+      totalCount: 1,
+      hasMore: false,
+    });
+    const { result } = renderHook(() => useUnassignedUsersInfinite(""), {
+      wrapper: withQueryClient(),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(users);
+    expect(result.current.data?.pages).toEqual([
+      { items: [user], page: 1, pageSize: 20, totalCount: 1, hasMore: false },
+    ]);
+    expect(getUnassignedUsersRequest).toHaveBeenCalledWith({
+      search: undefined,
+      page: 1,
+      pageSize: 20,
+    });
+  });
+
+  it("passes a non-empty search term through to the request", async () => {
+    (getUnassignedUsersRequest as jest.Mock).mockResolvedValueOnce({
+      items: [user],
+      page: 1,
+      pageSize: 20,
+      totalCount: 1,
+      hasMore: false,
+    });
+    renderHook(() => useUnassignedUsersInfinite("jamie"), { wrapper: withQueryClient() });
+
+    await waitFor(() =>
+      expect(getUnassignedUsersRequest).toHaveBeenCalledWith({
+        search: "jamie",
+        page: 1,
+        pageSize: 20,
+      })
+    );
+  });
+
+  it("fetches the next page and appends it once fetchNextPage is called", async () => {
+    (getUnassignedUsersRequest as jest.Mock)
+      .mockResolvedValueOnce({ items: [user], page: 1, pageSize: 1, totalCount: 2, hasMore: true })
+      .mockResolvedValueOnce({
+        items: [{ ...user, id: "user-2", username: "adoe" }],
+        page: 2,
+        pageSize: 1,
+        totalCount: 2,
+        hasMore: false,
+      });
+    const { result } = renderHook(() => useUnassignedUsersInfinite(""), {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.hasNextPage).toBe(true);
+
+    result.current.fetchNextPage();
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it("stops paginating once a 'next' page returns only already-seen users (backend ignoring `page`)", async () => {
+    (getUnassignedUsersRequest as jest.Mock)
+      .mockResolvedValueOnce({ items: [user], page: 1, pageSize: 1, totalCount: 5, hasMore: true })
+      .mockResolvedValueOnce({ items: [user], page: 1, pageSize: 1, totalCount: 5, hasMore: true });
+    const { result } = renderHook(() => useUnassignedUsersInfinite(""), {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    result.current.fetchNextPage();
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
+    expect(result.current.hasNextPage).toBe(false);
   });
 });

@@ -43,6 +43,10 @@ const projectAdminToken = buildToken({
   role: "ProjectAdmin",
 });
 
+function buildRequest(query = ""): Request {
+  return new Request(`http://localhost/api/auth/unassigned-users${query}`);
+}
+
 describe("GET /api/auth/unassigned-users", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -51,7 +55,7 @@ describe("GET /api/auth/unassigned-users", () => {
   it("401s when there is no access-token cookie", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(null);
 
-    const response = await GET();
+    const response = await GET(buildRequest());
 
     expect(response.status).toBe(401);
     expect(backendApiClient.get).not.toHaveBeenCalled();
@@ -62,13 +66,22 @@ describe("GET /api/auth/unassigned-users", () => {
       buildToken({ sub: "user-2", email: "user@hrsystem.com", role: "User" })
     );
 
-    const response = await GET();
+    const response = await GET(buildRequest());
 
     expect(response.status).toBe(403);
     expect(backendApiClient.get).not.toHaveBeenCalled();
   });
 
-  it("returns the unassigned-user list for a ProjectAdmin caller, unwrapping the backend envelope", async () => {
+  it("400s on an invalid pageSize", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+
+    const response = await GET(buildRequest("?pageSize=not-a-number"));
+
+    expect(response.status).toBe(400);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
+  });
+
+  it("requests page 1 with the default page size when no query params are given, unwrapping a bare-array Data envelope as a single, complete page", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -88,27 +101,36 @@ describe("GET /api/auth/unassigned-users", () => {
       },
     });
 
-    const response = await GET();
+    const response = await GET(buildRequest());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data).toEqual([
-      {
-        id: "00000000-0000-0000-0000-000000000001",
-        username: "admin",
-        email: "admin@hrsystem.com",
-        firstName: "System",
-        lastName: "Admin",
-        employeeId: "EMP-0001",
-      },
-    ]);
+    expect(body.data).toEqual({
+      items: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          username: "admin",
+          email: "admin@hrsystem.com",
+          firstName: "System",
+          lastName: "Admin",
+          employeeId: "EMP-0001",
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      totalCount: 1,
+      hasMore: false,
+    });
     expect(backendApiClient.get).toHaveBeenCalledWith(
       "/Auth/GetUserList",
-      expect.objectContaining({ headers: { Authorization: `Bearer ${projectAdminToken}` } })
+      expect.objectContaining({
+        params: { page: 1, pageSize: 20 },
+        headers: { Authorization: `Bearer ${projectAdminToken}` },
+      })
     );
   });
 
-  it("returns the unassigned-user list when the backend paginates Data as { TotalCount, PageNo, PageSize, Items }", async () => {
+  it("forwards page/pageSize/search and returns hasMore when the backend paginates Data as { TotalCount, PageNo, PageSize, Items }", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -116,9 +138,9 @@ describe("GET /api/auth/unassigned-users", () => {
         IsSuccess: true,
         Message: "Success",
         Data: {
-          TotalCount: 2,
-          PageNo: 1,
-          PageSize: 10,
+          TotalCount: 45,
+          PageNo: 2,
+          PageSize: 20,
           Items: [
             {
               UserId: "a3eb4839-7ae3-4987-9df5-0368e57c3543",
@@ -133,20 +155,68 @@ describe("GET /api/auth/unassigned-users", () => {
       },
     });
 
-    const response = await GET();
+    const response = await GET(buildRequest("?search=aung&page=2&pageSize=20"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data).toEqual([
-      {
-        id: "a3eb4839-7ae3-4987-9df5-0368e57c3543",
-        username: "aln",
-        email: "aln@hrsystem.com",
-        firstName: "Aung",
-        lastName: "Lin",
-        employeeId: "EMP-0002",
+    expect(body.data).toEqual({
+      items: [
+        {
+          id: "a3eb4839-7ae3-4987-9df5-0368e57c3543",
+          username: "aln",
+          email: "aln@hrsystem.com",
+          firstName: "Aung",
+          lastName: "Lin",
+          employeeId: "EMP-0002",
+        },
+      ],
+      page: 2,
+      pageSize: 20,
+      totalCount: 45,
+      hasMore: true,
+    });
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Auth/GetUserList",
+      expect.objectContaining({ params: { page: 2, pageSize: 20, search: "aung" } })
+    );
+  });
+
+  it("applies a defensive case-insensitive search filter, in case the backend ignores the `search` param", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Data: {
+          TotalCount: 2,
+          PageNo: 1,
+          PageSize: 20,
+          Items: [
+            {
+              UserId: "u1",
+              Username: "jsmith",
+              Email: "jsmith@hrsystem.com",
+              FirstName: "Jamie",
+              LastName: "Smith",
+            },
+            {
+              UserId: "u2",
+              Username: "adoe",
+              Email: "adoe@hrsystem.com",
+              FirstName: "Alex",
+              LastName: "Doe",
+            },
+          ],
+        },
       },
-    ]);
+    });
+
+    const response = await GET(buildRequest("?search=jamie"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.items).toHaveLength(1);
+    expect(body.data.items[0].username).toBe("jsmith");
   });
 
   it("returns a 502 fallback when the backend call itself fails", async () => {
@@ -156,22 +226,22 @@ describe("GET /api/auth/unassigned-users", () => {
       response: { status: 500, data: {} },
     });
 
-    const response = await GET();
+    const response = await GET(buildRequest());
 
     expect(response.status).toBe(502);
   });
 
-  it("treats a 404 from the backend as an empty list rather than an error", async () => {
+  it("treats a 404 from the backend as an empty page rather than an error", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404, data: { message: "Not Found" } },
     });
 
-    const response = await GET();
+    const response = await GET(buildRequest());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data).toEqual([]);
+    expect(body.data).toEqual({ items: [], page: 1, pageSize: 20, totalCount: 0, hasMore: false });
   });
 });
