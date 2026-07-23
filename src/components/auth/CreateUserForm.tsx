@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { SelectField } from "@/components/ui/SelectField";
+import { CountrySelectField } from "@/components/ui/CountrySelectField";
 import { Alert } from "@/components/ui/Alert";
 import { createUserSchema, type CreateUserFormValues } from "@/lib/validators/auth.validators";
 import { useCreateUser, useRoles } from "@/hooks/useAuth";
@@ -138,27 +139,16 @@ export function CreateUserForm() {
           control={control}
           name="countryId"
           render={({ field }) => (
-            <SelectField
-              label="Country"
+            <CountrySelectField
               name={field.name}
-              ref={field.ref}
-              value={field.value ?? ""}
+              countries={countries ?? []}
+              value={field.value}
               onBlur={field.onBlur}
               onChange={field.onChange}
+              isLoading={isCountriesLoading}
               disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
               hint="Optional."
-              placeholder={
-                isCountriesLoading
-                  ? "Loading countries…"
-                  : (countries?.length ?? 0) === 0
-                    ? "No countries available"
-                    : "Select a country..."
-              }
               error={errors.countryId?.message}
-              options={(countries ?? []).map((country) => ({
-                value: country.id,
-                label: `${country.name} (${country.code})`,
-              }))}
             />
           )}
         />

@@ -200,16 +200,32 @@ describe("PUT /api/timesheet-entries/[id]", () => {
     expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 
-  it("409s when the entry has already been approved", async () => {
+  // Per the `bugs/exchange-rate` feature request ("if he updates it again
+  // then re-approval required from PA"), updating an already-approved entry
+  // is no longer rejected here — `TimesheetEntry/UpdateTimesheetEntry` itself
+  // documents resetting the entry to pending as a result of this call (see
+  // `docs/HR_System_BE.postman_collection.json`), so the update is simply
+  // forwarded to the backend like any other.
+  it("forwards the update to the backend even when the entry has already been approved", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce(ownEntryEnvelope({ IsApproved: true }));
+    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Timesheet entry updated successfully. Re-approval required.",
+        Data: null,
+      },
+    });
 
     const response = await PUT(putRequest(validUpdatePayload), routeParams("1"));
-    const body = await response.json();
 
-    expect(response.status).toBe(409);
-    expect(body.message).toMatch(/cannot be edited/i);
-    expect(backendApiClient.put).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(backendApiClient.put).toHaveBeenCalledWith(
+      "/TimesheetEntry/UpdateTimesheetEntry/1",
+      { Hours: 6, TaskDescription: "Updated task description" },
+      expect.objectContaining({ headers: { Authorization: `Bearer ${userToken}` } })
+    );
   });
 
   it("403s when a ProjectAdmin edits another user's entry on a project they are not assigned to", async () => {

@@ -77,3 +77,16 @@ export const unassignedUserQuerySchema = z.object({
   pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(50).optional(),
 });
 export type UnassignedUserQuery = z.infer<typeof unassignedUserQuerySchema>;
+
+/**
+ * Server-side query schema for `GET /api/auth/users`, backing the
+ * `/admin/users` "User Management" list page. Same shape/rationale as
+ * `unassignedUserQuerySchema` above — `Auth/GetUserList` documents no query
+ * parameters at all in `docs/HR_System_BE.postman_collection.json`.
+ */
+export const userListQuerySchema = z.object({
+  search: z.string().trim().max(100, "Search term is too long.").optional(),
+  page: z.coerce.number("page must be a number.").int().min(1).optional(),
+  pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(100).optional(),
+});
+export type UserListQuery = z.infer<typeof userListQuerySchema>;

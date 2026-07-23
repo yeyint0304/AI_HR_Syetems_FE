@@ -72,11 +72,18 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("link", { name: /^currencies$/i })).not.toBeInTheDocument();
   });
 
-  it("renders the implemented Users item (SystemAdmin) as a real navigation link to Create User", () => {
+  it("renders the implemented Users item (SystemAdmin) as a real navigation link to the User Management list", () => {
     renderSidebar(systemAdminUser);
 
     const usersLink = screen.getByRole("link", { name: /^users$/i });
-    expect(usersLink).toHaveAttribute("href", "/admin/users/new");
+    expect(usersLink).toHaveAttribute("href", "/admin/users");
+  });
+
+  it("renders the implemented Rate Cards item (SystemAdmin) as a real navigation link", () => {
+    renderSidebar(systemAdminUser);
+
+    const rateCardsLink = screen.getByRole("link", { name: /^rate cards$/i });
+    expect(rateCardsLink).toHaveAttribute("href", "/admin/rate-cards");
   });
 
   it("renders the implemented Invoices item as a real navigation link", () => {

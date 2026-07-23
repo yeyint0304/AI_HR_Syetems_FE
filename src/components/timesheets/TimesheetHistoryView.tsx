@@ -31,7 +31,7 @@ import {
 import { canManageInvoices } from "@/lib/constants/invoice.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
-import { compareDateOnly } from "@/lib/utils/week";
+import { compareDateOnly, getTodayDateOnly } from "@/lib/utils/week";
 import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 import type { TimesheetPeriod } from "@/types/timesheetPeriod.types";
 
@@ -69,10 +69,18 @@ function sumHours(entries: TimesheetEntry[]): number {
  * applied client-side to the fetched entries.
  *
  * Per `TS-05` ("Update Timesheet Entry" — user story backlog): an entry may
- * only be edited while it is not yet approved *and* its timesheet period is
- * not locked. Already-approved entries, and entries whose period has been
- * locked since, render as read-only "Locked" rows (mirroring the wireframe's
- * "Locked"/"Edit" action column).
+ * be edited while its timesheet period is not locked, and — per the
+ * `bugs/exchange-rate` feature request ("TS can be submitted only once a day
+ * by Employee and if he updates it again then re-approval required from
+ * PA") — approval no longer blocks editing outright: an owner may still edit
+ * an *already-approved* entry as long as it's dated *today* (`canEditOwnEntry`),
+ * since `TimesheetEntry/UpdateTimesheetEntry` resets the entry to pending
+ * ("Re-approval required" — see `docs/HR_System_BE.postman_collection.json`).
+ * An approved entry from a previous day, or any entry whose period has since
+ * been locked, still renders as a read-only "Locked" row (mirroring the
+ * wireframe's "Locked"/"Edit" action column) — this is the "submitted once a
+ * day" half of the request: once a day has passed, it's frozen regardless of
+ * approval state.
  *
  * Manager approval workflow: for SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`),
  * this view broadens its scope from "my history" to every user's entries (the
@@ -85,28 +93,30 @@ function sumHours(entries: TimesheetEntry[]): number {
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
  * treated as irreversible from this UI (confirmed via `ConfirmDialog`).
  *
- * Per row, for a still-pending (`!isApproved`) entry whose period isn't
- * locked (`isEntryEditable`), the Actions column renders *every* action the
- * signed-in user is entitled to for that entry — ownership and role are
- * independent, non-exclusive gates, not an either/or choice:
- *   - **Edit** — shown whenever it's the signed-in user's *own* entry,
- *     regardless of project assignment (logging/editing your own work is
- *     never project-scoped).
- *   - **Approve** / **Reject** — shown whenever the signed-in user is a
- *     manager (`canApprove`) *and* is authorized to act on that entry's
- *     project (`canManageEntryProject`, below) — including their own entry.
- *     A manager who owns a still-pending, unlocked entry therefore sees Edit
- *     *and* Approve/Reject together on that row (assuming they're also
- *     authorized for its project).
- *   - **Locked** — shown instead of the above whenever no gate applies (an
- *     approved entry, a locked-period entry, a non-manager viewing another
- *     user's entry — who never reaches this row at all since the entries
- *     query is scoped to their own `userId` — or, per the
- *     `bugs/timesheet-history` feature request "if not his own project (not
- *     assign user) then don't add any action for it", a `ProjectAdmin`
- *     reviewing an entry for a project they are *not* assigned to).
+ * Per row, the Actions column renders *every* action the signed-in user is
+ * entitled to for that entry — ownership and role are independent,
+ * non-exclusive gates, not an either/or choice:
+ *   - **Edit** — shown whenever it's the signed-in user's *own* entry, its
+ *     period isn't locked, and it's either still pending or dated today
+ *     (`canEditOwnEntry`) — regardless of project assignment (logging/editing
+ *     your own work is never project-scoped).
+ *   - **Approve** / **Reject** — shown whenever the entry is still pending,
+ *     its period isn't locked, the signed-in user is a manager (`canApprove`),
+ *     and they're authorized to act on that entry's project
+ *     (`canReviewEntry`, below) — including their own entry. A manager who
+ *     owns a still-pending, unlocked entry therefore sees Edit *and*
+ *     Approve/Reject together on that row (assuming they're also authorized
+ *     for its project).
+ *   - **Locked** — shown instead of the above whenever no gate applies (a
+ *     locked-period entry, an approved entry from a previous day, a
+ *     non-manager viewing another user's entry — who never reaches this row
+ *     at all since the entries query is scoped to their own `userId` — or,
+ *     per the `bugs/timesheet-history` feature request "if not his own
+ *     project (not assign user) then don't add any action for it", a
+ *     `ProjectAdmin` reviewing an entry for a project they are *not*
+ *     assigned to).
  *
- * **Project-assignment scope for Approve/Reject** (`canManageEntryProject`):
+ * **Project-assignment scope for Approve/Reject** (`canReviewEntry`):
  * a `ProjectAdmin` (`isProjectScopedTimesheetManager`, per
  * `lib/constants/timesheetEntry.constants.ts`) may only Approve/Reject
  * entries for projects they are an assigned resource on
@@ -117,11 +127,11 @@ function sumHours(entries: TimesheetEntry[]): number {
  * `SystemAdmin` is exempt from this scoping and can Approve/Reject anything,
  * consistent with its unrestricted authority elsewhere in this app (e.g.
  * `ADMIN_ROUTE_PREFIX`). While the per-project assignment queries are still
- * loading, `canManageEntryProject` conservatively returns `false` (fails
- * closed to "Locked") rather than flashing Approve/Reject buttons that might
+ * loading, `canReviewEntry` conservatively returns `false` (fails closed to
+ * "Locked") rather than flashing Approve/Reject buttons that might
  * immediately disappear once the real assignment data arrives.
  *
- * `isEntryEditable` gates all of the above: once a timesheet period is
+ * `isPeriodUnlockedFor` gates both of the above: once a timesheet period is
  * locked, every entry inside it — regardless of whose it is — freezes to
  * "Locked", so neither Edit nor Approve/Reject can act on an entry whose
  * period has since been locked.
@@ -268,9 +278,9 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   const assignmentQueries = useProjectAssignmentsForProjects(managedEntryProjectIds);
 
   // `null` means "not yet known" (still loading, or not applicable to this
-  // signed-in user) — `canManageEntryProject` treats that as "not assigned"
-  // (fail closed) rather than optimistically showing actions that might
-  // disappear once the real data arrives.
+  // signed-in user) — `canReviewEntry` treats that as "not assigned" (fail
+  // closed) rather than optimistically showing actions that might disappear
+  // once the real data arrives.
   const assignedProjectIds = useMemo(() => {
     if (!isProjectScopedManager) return null;
     if (assignmentQueries.some((query) => query.isLoading)) return null;
@@ -314,16 +324,13 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     [visibleEntries]
   );
 
-  // Shared by both the owner's Edit action and a manager's Approve/Reject
-  // actions below (see the component doc comment) so a locked period always
-  // reads as "Locked", no matter who is looking at the entry or which of the
-  // two actions would otherwise apply.
-  function isEntryEditable(entry: TimesheetEntry): boolean {
-    if (entry.isApproved) return false;
-    // Defense-in-depth: if the owning period can't be resolved (still loading,
-    // or missing from the list for any reason) treat the entry as locked
-    // rather than optimistically allowing an edit whose lock status we can't
-    // actually confirm.
+  // Defense-in-depth: if the owning period can't be resolved (still loading,
+  // or missing from the list for any reason) treat the entry as locked rather
+  // than optimistically allowing an action whose lock status we can't
+  // actually confirm. Shared by `canEditOwnEntry`/`canReviewEntry` below so a
+  // locked period always reads as "Locked", no matter who is looking at the
+  // entry or which action would otherwise apply.
+  function isPeriodUnlockedFor(entry: TimesheetEntry): boolean {
     const period = periodById.get(entry.timesheetPeriodId);
     return Boolean(period && !period.isLocked);
   }
@@ -333,12 +340,33 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   }
 
   /**
-   * Whether the signed-in manager may Approve/Reject this specific entry —
-   * the "own project (assigned user)" gate from the `bugs/timesheet-history`
-   * feature request. See the component doc comment's "Project-assignment
-   * scope for Approve/Reject" section for the full rationale.
+   * Whether the signed-in user (the entry's owner) may edit it via the Edit
+   * action. Per the `bugs/exchange-rate` feature request ("if he updates it
+   * again then re-approval required from PA"), approval no longer blocks
+   * this outright — an owner may still edit *today's* entry even after it's
+   * been approved (saving calls the same update mutation, and the backend
+   * resets the entry to pending — "re-approval required"), but an approved
+   * entry from a previous day stays locked (the "submitted once a day" half
+   * of the request: past days are frozen regardless of approval state).
    */
-  function canManageEntryProject(entry: TimesheetEntry): boolean {
+  function canEditOwnEntry(entry: TimesheetEntry): boolean {
+    if (!isOwnEntry(entry)) return false;
+    if (!isPeriodUnlockedFor(entry)) return false;
+    if (!entry.isApproved) return true;
+    return entry.entryDate === getTodayDateOnly();
+  }
+
+  /**
+   * Whether the signed-in manager may Approve/Reject this specific entry —
+   * always requires it still be pending (there is no "unapprove" action),
+   * plus the "own project (assigned user)" gate from the
+   * `bugs/timesheet-history` feature request. See the component doc
+   * comment's "Project-assignment scope for Approve/Reject" section for the
+   * full rationale.
+   */
+  function canReviewEntry(entry: TimesheetEntry): boolean {
+    if (entry.isApproved) return false;
+    if (!isPeriodUnlockedFor(entry)) return false;
     if (!canApprove) return false;
     if (!isProjectScopedManager) return true; // SystemAdmin: unrestricted.
     return assignedProjectIds?.has(entry.projectId) ?? false;
@@ -415,7 +443,11 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     try {
       await updateMutation.mutateAsync({ id: entry.id, payload: parsed.data });
       setEditingEntryId(null);
-      setSaveSuccess("Timesheet entry updated successfully.");
+      setSaveSuccess(
+        entry.isApproved
+          ? "Timesheet entry updated successfully. This entry now requires re-approval from your project admin."
+          : "Timesheet entry updated successfully."
+      );
     } catch (error) {
       setEditError(getApiErrorMessage(error, "Unable to update this timesheet entry. Please try again."));
     }
@@ -586,9 +618,8 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
               <tbody className="divide-y divide-slate-100">
                 {visibleEntries.map((entry) => {
                   const isEditing = editingEntryId === entry.id;
-                  const editable = isEntryEditable(entry);
-                  const own = isOwnEntry(entry);
-                  const canManageThisEntry = canManageEntryProject(entry);
+                  const canEditThisEntry = canEditOwnEntry(entry);
+                  const canManageThisEntry = canReviewEntry(entry);
 
                   return (
                     <tr key={entry.id}>
@@ -669,12 +700,17 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                               Save
                             </Button>
                           </div>
-                        ) : editable && (own || canManageThisEntry) ? (
+                        ) : canEditThisEntry || canManageThisEntry ? (
                           <div className="flex flex-wrap justify-end gap-3">
-                            {own && (
+                            {canEditThisEntry && (
                               <button
                                 type="button"
                                 onClick={() => startEdit(entry)}
+                                title={
+                                  entry.isApproved
+                                    ? "Editing this approved entry will require re-approval."
+                                    : undefined
+                                }
                                 className="inline-flex items-center gap-1 rounded text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                               >
                                 <Pencil aria-hidden="true" className="h-3.5 w-3.5" />

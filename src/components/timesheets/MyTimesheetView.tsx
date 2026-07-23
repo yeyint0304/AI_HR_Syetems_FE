@@ -5,7 +5,8 @@ import { ChevronLeft, ChevronRight, Info, Lock } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
-import { useProjectList } from "@/hooks/useProjects";
+import { useAuth } from "@/hooks/useAuth";
+import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useCreateTimesheetEntry,
@@ -23,6 +24,7 @@ import {
   MAX_ENTRY_HOURS,
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
+import { USER_ROLES } from "@/lib/constants/auth.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
 import {
@@ -109,19 +111,44 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * `TimesheetPeriod/LockTimesheetPeriod` contract description).
  *
  * Note: the backend contract has no "projects assigned to me" endpoint —
- * only `Project/GetProjectList` (all projects) and per-project assignment
- * lookups. This view therefore lists every *active* project as loggable,
- * which is a reasonable default until a user-scoped project list exists.
+ * only `Project/GetProjectList` (all projects) and the per-project
+ * `Project/GetProjectAssignments/{projectId}` lookup. Per the
+ * `bugs/exchange-rate` feature request ("ProjectAdmin: PA should be able to
+ * [log/see] his own assigned project's timesheet... the total hours will be
+ * counted based on the assigned projects"), this view fans out one
+ * assignments query per active project (`useProjectAssignmentsForProjects`,
+ * the same technique `TimesheetHistoryView` already uses for its
+ * project-scoped manager gate) and narrows the loggable project list down to
+ * the ones the signed-in user is actually an assigned resource on — so the
+ * weekly grid's row/daily/weekly totals are computed from assigned projects
+ * only, not every active project org-wide. `SystemAdmin` is exempt (as
+ * elsewhere in this app, e.g. `isProjectScopedTimesheetManager`) and keeps
+ * seeing every active project, since that role isn't itself a project
+ * resource assignment concept.
  *
  * Per the `bugs/timesheet-history` feature request ("In My Timesheet can
  * update date just for present day"): only the *current* calendar day
  * (`getTodayDateOnly`) is ever loggable/editable in the weekly grid, in
- * addition to the existing locked-period/approved/out-of-range checks below
- * — see `isCellLocked`. Past days become read-only once the day has passed
- * (their previously-saved hours still render, just disabled) and future days
- * cannot be logged in advance. This applies uniformly to create, update, and
- * delete (clearing hours), since all three share the same per-cell lock gate
- * and `handleSaveAll` skips locked cells outright.
+ * addition to the existing locked-period/out-of-range checks below — see
+ * `isCellLocked`. Past days become read-only once the day has passed (their
+ * previously-saved hours still render, just disabled) and future days cannot
+ * be logged in advance. This applies uniformly to create, update, and delete
+ * (clearing hours), since all three share the same per-cell lock gate and
+ * `handleSaveAll` skips locked cells outright.
+ *
+ * Per the `bugs/exchange-rate` feature request ("TS can be submitted only
+ * once a day by Employee and if he updates it again then re-approval
+ * required from PA"): today's cell remains editable even once its entry has
+ * been approved — `isCellLocked` no longer treats `isApproved` as an
+ * automatic lock. Saving a change to an already-approved entry calls the same
+ * `useUpdateTimesheetEntry` mutation as any other edit; the backend's
+ * `TimesheetEntry/UpdateTimesheetEntry` contract documents that this flips
+ * the entry back to pending ("Re-approval required" — see
+ * `docs/HR_System_BE.postman_collection.json`), so the very next refetch
+ * shows it as pending again, exactly matching the requested workflow. Only
+ * *today's* approved entries get this treatment; once a day has passed,
+ * `isCellLocked`'s existing "only today" rule freezes it regardless of
+ * approval state, which is the "submitted once a day" half of the request.
  *
  * Per the same feature request ("when change the hour then open for
  * description"): typing a non-empty hours value into a cell automatically
@@ -137,6 +164,13 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * (`onToggleExpand`) still works as before for reviewing/collapsing notes.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
+  const { user } = useAuth();
+  // SystemAdmin is exempt from project-assignment scoping (unrestricted, as
+  // elsewhere in this app) — every other role only logs/sees time against
+  // projects they're actually an assigned resource on. See the component doc
+  // comment's "assigned projects" section.
+  const isScopedToAssignedProjects = user?.role !== USER_ROLES.SYSTEM_ADMIN;
+
   const {
     data: periods,
     isLoading: isPeriodsLoading,
@@ -166,6 +200,40 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   }, [periods]);
 
   const activeProjects = useMemo(() => (projects ?? []).filter((project) => project.isActive), [projects]);
+  const activeProjectIds = useMemo(() => activeProjects.map((project) => project.id), [activeProjects]);
+
+  // One `Project/GetProjectAssignments/{projectId}` fan-out query per active
+  // project (see `hooks/useProjects.ts#useProjectAssignmentsForProjects`) —
+  // only actually queried when scoping applies, so a SystemAdmin never pays
+  // this extra round trip.
+  const assignmentQueries = useProjectAssignmentsForProjects(
+    isScopedToAssignedProjects ? activeProjectIds : []
+  );
+  const isAssignmentsLoading = isScopedToAssignedProjects && assignmentQueries.some((query) => query.isLoading);
+
+  // `null` only when scoping doesn't apply (SystemAdmin); otherwise always a
+  // (possibly empty) `Set` once every assignment query has resolved.
+  const assignedProjectIds = useMemo(() => {
+    if (!isScopedToAssignedProjects) return null;
+    const set = new Set<string>();
+    assignmentQueries.forEach((query, index) => {
+      const projectId = activeProjectIds[index];
+      if (query.data?.some((assignment) => assignment.userId === currentUserId)) {
+        set.add(projectId);
+      }
+    });
+    return set;
+  }, [isScopedToAssignedProjects, assignmentQueries, activeProjectIds, currentUserId]);
+
+  // The project list actually rendered/loggable in the weekly grid — every
+  // active project for a SystemAdmin, narrowed to assigned-only for everyone
+  // else. Row/daily/weekly totals below are derived from this list, so they
+  // default to being computed off assigned projects per the feature request.
+  const loggableProjects = useMemo(() => {
+    if (!isScopedToAssignedProjects) return activeProjects;
+    if (!assignedProjectIds) return [];
+    return activeProjects.filter((project) => assignedProjectIds.has(project.id));
+  }, [isScopedToAssignedProjects, activeProjects, assignedProjectIds]);
 
   // Pick a default period/week once periods have loaded (once per data load; the
   // user may then freely change either via the controls below). This adjusts
@@ -220,7 +288,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       ? [
           selectedPeriod.id,
           weekDates.join(","),
-          activeProjects.map((project) => project.id).join(","),
+          loggableProjects.map((project) => project.id).join(","),
           [...baselineByKey.entries()]
             .map(([key, entry]) => `${key}:${entry.hours}:${entry.taskDescription}`)
             .join("|"),
@@ -233,7 +301,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       setDrafts({});
     } else {
       const next: Record<string, DraftCell> = {};
-      for (const project of activeProjects) {
+      for (const project of loggableProjects) {
         for (const date of weekDates) {
           const key = cellKey(project.id, date);
           const baseline = baselineByKey.get(key);
@@ -288,11 +356,17 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     setExpandedProjectId(projectId);
   }
 
-  function isCellLocked(date: string, baseline: TimesheetEntry | undefined): boolean {
+  /**
+   * Whether a given project/day cell is read-only. Approval status
+   * (`baseline?.isApproved`) is deliberately *not* checked here — per the
+   * component doc comment's "re-approval required" section, today's cell
+   * stays editable even once approved; only the period-lock, date-range, and
+   * "only today" rules below actually freeze a cell.
+   */
+  function isCellLocked(date: string, _baseline: TimesheetEntry | undefined): boolean {
     if (!selectedPeriod) return true;
     if (selectedPeriod.isLocked) return true;
     if (!isDateOnlyInRange(date, selectedPeriod.periodStart, selectedPeriod.periodEnd)) return true;
-    if (Boolean(baseline?.isApproved)) return true;
     // Only today's date is loggable/editable — see the component doc comment.
     return date !== getTodayDateOnly();
   }
@@ -304,8 +378,12 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
 
     const validationErrors: Record<string, string> = {};
     const operations: PendingOperation[] = [];
+    // Tracks whether any queued update targets an entry that was already
+    // approved, so the post-save message can call out that re-approval is
+    // now required (see the component doc comment).
+    let reapprovalCount = 0;
 
-    for (const project of activeProjects) {
+    for (const project of loggableProjects) {
       for (const date of weekDates) {
         const key = cellKey(project.id, date);
         const baseline = baselineByKey.get(key);
@@ -349,6 +427,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
           validationErrors[key] = parsed.error.issues[0]?.message ?? "Check this entry.";
           continue;
         }
+        if (baseline.isApproved) reapprovalCount += 1;
         operations.push({ type: "update", key, id: baseline.id, payload: parsed.data });
       }
     }
@@ -390,12 +469,18 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       setSaveError(
         `${failureCount} ${failureCount === 1 ? "entry" : "entries"} failed to save. ${firstFailureMessage}`
       );
+    } else if (reapprovalCount > 0) {
+      setSaveSuccess(
+        `Timesheet saved successfully. ${reapprovalCount} previously-approved ${
+          reapprovalCount === 1 ? "entry now requires" : "entries now require"
+        } re-approval from your project admin.`
+      );
     } else {
       setSaveSuccess("Timesheet saved successfully.");
     }
   }
 
-  const isInitialLoading = isPeriodsLoading || isProjectsLoading;
+  const isInitialLoading = isPeriodsLoading || isProjectsLoading || isAssignmentsLoading;
 
   if (isInitialLoading) {
     return (
@@ -439,6 +524,14 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     return <Alert variant="info">There are no active projects available to log time against yet.</Alert>;
   }
 
+  if (loggableProjects.length === 0) {
+    return (
+      <Alert variant="info">
+        You are not assigned to any active projects yet. Contact your project admin before logging time.
+      </Alert>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -459,6 +552,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       {selectedPeriod && !selectedPeriod.isLocked && (
         <Alert variant="info">
           You can only log or edit hours for today, {formatShortDate(getTodayDateOnly())}. Other days are read-only.
+          Editing an already-approved entry for today will require re-approval from your project admin.
         </Alert>
       )}
 
@@ -510,7 +604,7 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       ) : selectedPeriod && weekDates.length === 7 ? (
         <TimesheetGrid
           period={selectedPeriod}
-          projects={activeProjects}
+          projects={loggableProjects}
           weekDates={weekDates}
           drafts={drafts}
           baselineByKey={baselineByKey}
@@ -635,7 +729,9 @@ function TimesheetGrid({
                             {project.name} hours on {formatShortDate(date)}
                           </label>
                           <div className="flex flex-col items-center gap-1">
-                            {baseline?.isApproved ? (
+                            {baseline?.isApproved && locked ? (
+                              // Historical (non-today) or period-locked approved entry —
+                              // permanently read-only, per the existing "Locked" state.
                               <span
                                 title="Approved — locked"
                                 className="flex items-center gap-1 text-xs font-medium text-green-700"
@@ -644,31 +740,41 @@ function TimesheetGrid({
                                 {baseline.hours}h
                               </span>
                             ) : (
-                              <input
-                                id={`hours-${key}`}
-                                type="number"
-                                inputMode="decimal"
-                                min={0}
-                                max={MAX_ENTRY_HOURS}
-                                step={ENTRY_HOURS_STEP}
-                                value={draft?.hours ?? ""}
-                                disabled={locked}
-                                aria-invalid={Boolean(error) || undefined}
-                                aria-describedby={error ? `${key}-error` : undefined}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  onCellChange(key, { hours: value });
-                                  // Auto-open this project's task-notes panel the moment
-                                  // hours are entered, so the (required) description field
-                                  // is immediately visible — see the component doc comment.
-                                  if (value.trim() !== "") {
-                                    onExpandProject(project.id);
-                                  }
-                                }}
-                                className={`w-16 rounded-md border px-2 py-1.5 text-center text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${
-                                  error ? "border-red-400" : "border-slate-300"
-                                }`}
-                              />
+                              <>
+                                {baseline?.isApproved && (
+                                  // Today's approved entry stays editable — see the
+                                  // component doc comment's "re-approval required"
+                                  // section. Editing it will flip it back to pending.
+                                  <span className="text-[10px] font-medium text-green-700">
+                                    Approved — editing requires re-approval
+                                  </span>
+                                )}
+                                <input
+                                  id={`hours-${key}`}
+                                  type="number"
+                                  inputMode="decimal"
+                                  min={0}
+                                  max={MAX_ENTRY_HOURS}
+                                  step={ENTRY_HOURS_STEP}
+                                  value={draft?.hours ?? ""}
+                                  disabled={locked}
+                                  aria-invalid={Boolean(error) || undefined}
+                                  aria-describedby={error ? `${key}-error` : undefined}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    onCellChange(key, { hours: value });
+                                    // Auto-open this project's task-notes panel the moment
+                                    // hours are entered, so the (required) description field
+                                    // is immediately visible — see the component doc comment.
+                                    if (value.trim() !== "") {
+                                      onExpandProject(project.id);
+                                    }
+                                  }}
+                                  className={`w-16 rounded-md border px-2 py-1.5 text-center text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${
+                                    error ? "border-red-400" : "border-slate-300"
+                                  }`}
+                                />
+                              </>
                             )}
                             {error && (
                               <p id={`${key}-error`} role="alert" className="text-[10px] font-medium text-red-600">

@@ -9,6 +9,8 @@ import type {
   UnassignedUserListParams,
   UnassignedUserPage,
   UpdateProfileRequest,
+  UserListPage,
+  UserListQueryParams,
 } from "@/types/auth.types";
 
 /**
@@ -67,5 +69,17 @@ export async function getUnassignedUsersRequest(
   const { data } = await apiClient.get<{ data: UnassignedUserPage }>("/auth/unassigned-users", {
     params,
   });
+  return data.data;
+}
+
+/**
+ * Read-only, searchable + paginated reference data backing the `/admin/users`
+ * "User Management" list page (`components/auth/UsersListView.tsx`). Proxies
+ * through this app's own `/api/auth/users` Route Handler, which in turn
+ * calls the backend's `Auth/GetUserList` endpoint (see
+ * `app/api/auth/users/route.ts`).
+ */
+export async function getUserListRequest(params: UserListQueryParams = {}): Promise<UserListPage> {
+  const { data } = await apiClient.get<{ data: UserListPage }>("/auth/users", { params });
   return data.data;
 }

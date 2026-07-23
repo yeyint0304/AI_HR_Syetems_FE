@@ -12,9 +12,13 @@
  * `TaskDescription` — the project/period/date of an existing entry cannot be
  * changed via the backend contract, so `UpdateTimesheetEntryRequest` only
  * exposes those two fields. Approval is a separate manager-facing workflow
- * (`TimesheetEntry/ApproveTimesheetEntry`) that is out of scope for the
- * self-service "My Timesheet" feature — this app only reads `isApproved` to
- * lock down editing of already-approved entries.
+ * (`TimesheetEntry/ApproveTimesheetEntry`), but editing an already-approved
+ * entry is *not* blocked outright: per the saved "Update Timesheet Entry"
+ * example in `docs/HR_System_BE.postman_collection.json` ("Timesheet entry
+ * updated successfully. Re-approval required."), the backend itself resets
+ * `IsApproved` to `false` on update — this app's `isApproved` field is used
+ * to surface that re-approval requirement in the UI (`MyTimesheetView`,
+ * `TimesheetHistoryView`), not to hard-block the edit.
  */
 
 export interface TimesheetEntry {

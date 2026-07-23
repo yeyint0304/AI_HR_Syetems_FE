@@ -7,6 +7,7 @@ import {
   createUserRequest,
   getRolesRequest,
   getUnassignedUsersRequest,
+  getUserListRequest,
   loginRequest,
   logoutRequest,
   updateProfileRequest,
@@ -19,6 +20,7 @@ import type {
   LoginRequest,
   UnassignedUserPage,
   UpdateProfileRequest,
+  UserListQueryParams,
 } from "@/types/auth.types";
 
 /**
@@ -157,5 +159,24 @@ export function useUnassignedUsersInfinite(search: string) {
 
       return lastPage.page + 1;
     },
+  });
+}
+
+/**
+ * Read-only reference-data query key for the `/admin/users` "User
+ * Management" list page (`components/auth/UsersListView.tsx`).
+ */
+export const USER_LIST_QUERY_KEY = ["user-list"] as const;
+
+/**
+ * Paginated, searchable user list backing `/admin/users` — the full "User
+ * Management" screen (role/country/status per row), distinct from
+ * `useUnassignedUsersInfinite` above (which only backs the Project
+ * Assignments combobox's minimal option labels).
+ */
+export function useUserList(params: UserListQueryParams = {}) {
+  return useQuery({
+    queryKey: [...USER_LIST_QUERY_KEY, params] as const,
+    queryFn: () => getUserListRequest(params),
   });
 }

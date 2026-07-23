@@ -107,6 +107,46 @@ export interface UnassignedUserPage {
   hasMore: boolean;
 }
 
+/**
+ * A single row on the `/admin/users` "User Management" screen
+ * (`docs/HR_System_FE_wireframe.pdf`: "table shows all... users with role
+ * badges... and role count chips"). Sourced from the same `Auth/GetUserList`
+ * endpoint as `UnassignedUser` above, but exposing the additional
+ * role/country/status fields that endpoint's full (unfiltered) response
+ * includes and the user-list screen needs — `UnassignedUser` deliberately
+ * stays minimal since it only backs a combobox's option label.
+ */
+export interface UserListItem {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  employeeId?: string | null;
+  roleName: string;
+  countryId?: string | null;
+  countryCode?: string | null;
+  countryName?: string | null;
+  /** `Auth/GetUserList`'s saved example omits this field — defaults to `true` (active) when absent, per `lib/server/authResponseMappers.ts`. */
+  isActive: boolean;
+}
+
+/** Query params for `GET /api/auth/users`, backing the `/admin/users` list page. */
+export interface UserListQueryParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** One page of `UserListItem` results, as returned by `GET /api/auth/users`. */
+export interface UserListPage {
+  items: UserListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+}
+
 export interface ApiErrorBody {
   message?: string;
   errors?: Record<string, string[]>;

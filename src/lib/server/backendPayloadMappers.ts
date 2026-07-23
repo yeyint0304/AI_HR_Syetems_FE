@@ -20,6 +20,7 @@ import type {
   CreateExchangeRateRequest,
   UpdateExchangeRateRequest,
 } from "@/types/exchangeRate.types";
+import type { CreateRateCardRequest, UpdateRateCardRequest } from "@/types/rateCard.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -185,6 +186,29 @@ export function toBackendCreateExchangeRatePayload(payload: CreateExchangeRateRe
 export function toBackendUpdateExchangeRatePayload(payload: UpdateExchangeRateRequest) {
   return {
     Rate: payload.rate,
+    EffectiveDate: payload.effectiveDate,
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `RateCard/CreateRateCard`. */
+export function toBackendCreateRateCardPayload(payload: CreateRateCardRequest) {
+  return {
+    CountryId: payload.countryId,
+    ResourceRoleTypeId: payload.resourceRoleTypeId,
+    CurrencyId: payload.currencyId,
+    HourlyRate: payload.hourlyRate,
+    BillingRate: payload.billingRate,
+    EffectiveDate: payload.effectiveDate,
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `RateCard/UpdateRateCard`, which only accepts rates/effective date/active status (country/role/currency are immutable after creation). */
+export function toBackendUpdateRateCardPayload(payload: UpdateRateCardRequest) {
+  return {
+    HourlyRate: payload.hourlyRate,
+    BillingRate: payload.billingRate,
     EffectiveDate: payload.effectiveDate,
     IsActive: payload.isActive,
   };

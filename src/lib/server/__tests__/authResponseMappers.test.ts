@@ -2,6 +2,8 @@ import {
   mapBackendUnassignedUser,
   mapBackendUnassignedUserList,
   mapBackendUnassignedUserPage,
+  mapBackendUserListItem,
+  mapBackendUserListPage,
 } from "@/lib/server/authResponseMappers";
 
 const RAW_USER = {
@@ -139,5 +141,82 @@ describe("mapBackendUnassignedUserPage", () => {
 
     expect(result.page).toBe(4);
     expect(result.pageSize).toBe(15);
+  });
+});
+
+const RAW_USER_LIST_ITEM = {
+  UserId: "u1",
+  Username: "jsmith",
+  Email: "jsmith@hrsystem.com",
+  FirstName: "Jamie",
+  LastName: "Smith",
+  EmployeeId: "EMP-001",
+  RoleName: "ProjectAdmin",
+  CountryId: "22222222-2222-2222-2222-222222222201",
+  CountryCode: "SG",
+  CountryName: "Singapore",
+};
+
+describe("mapBackendUserListItem", () => {
+  it("maps a raw backend user, tolerating PascalCase field names, including role/country", () => {
+    expect(mapBackendUserListItem(RAW_USER_LIST_ITEM)).toEqual({
+      id: "u1",
+      username: "jsmith",
+      email: "jsmith@hrsystem.com",
+      firstName: "Jamie",
+      lastName: "Smith",
+      employeeId: "EMP-001",
+      roleName: "ProjectAdmin",
+      countryId: "22222222-2222-2222-2222-222222222201",
+      countryCode: "SG",
+      countryName: "Singapore",
+      isActive: true,
+    });
+  });
+
+  it("defaults isActive to true when the field is absent (per the saved GetUserList example)", () => {
+    const result = mapBackendUserListItem(RAW_USER_LIST_ITEM);
+    expect(result?.isActive).toBe(true);
+  });
+
+  it("respects an explicit IsActive: false", () => {
+    const result = mapBackendUserListItem({ ...RAW_USER_LIST_ITEM, IsActive: false });
+    expect(result?.isActive).toBe(false);
+  });
+
+  it("returns null when required fields are missing", () => {
+    expect(mapBackendUserListItem({ Username: "jsmith" })).toBeNull();
+    expect(mapBackendUserListItem(null)).toBeNull();
+  });
+});
+
+describe("mapBackendUserListPage", () => {
+  it("unwraps the real backend's paginated { TotalCount, PageNo, PageSize, Items } shape", () => {
+    const result = mapBackendUserListPage(
+      {
+        StatusCode: 200,
+        IsSuccess: true,
+        Data: { TotalCount: 5, PageNo: 1, PageSize: 10, Items: [RAW_USER_LIST_ITEM] },
+      },
+      1,
+      10
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ id: "u1", roleName: "ProjectAdmin", countryCode: "SG" }),
+    ]);
+    expect(result.totalCount).toBe(5);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it("treats a bare-array Data as a single, complete page", () => {
+    const result = mapBackendUserListPage(
+      { StatusCode: 200, IsSuccess: true, Data: [RAW_USER_LIST_ITEM] },
+      1,
+      20
+    );
+
+    expect(result.items).toHaveLength(1);
+    expect(result.hasMore).toBe(false);
   });
 });
