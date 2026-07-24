@@ -81,6 +81,72 @@ export interface UnassignedUser {
   employeeId?: string | null;
 }
 
+/**
+ * Query params for `GET /api/auth/unassigned-users`, backing the searchable,
+ * scroll-paginated "User" combobox on the Project Assignments screen
+ * (`components/ui/SearchableSelectField.tsx` +
+ * `hooks/useAuth.ts#useUnassignedUsersInfinite`). See
+ * `app/api/auth/unassigned-users/route.ts` for how these are applied against
+ * `Auth/GetUserList`, which — unlike `Country/GetAllCountries` and friends —
+ * documents no query parameters at all in
+ * `docs/HR_System_BE.postman_collection.json`.
+ */
+export interface UnassignedUserListParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** One page of `UnassignedUser` results, as returned by `GET /api/auth/unassigned-users`. */
+export interface UnassignedUserPage {
+  items: UnassignedUser[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  /** Whether a next page is worth requesting (`page * pageSize < totalCount`, at minimum). */
+  hasMore: boolean;
+}
+
+/**
+ * A single row on the `/admin/users` "User Management" screen
+ * (`docs/HR_System_FE_wireframe.pdf`: "table shows all... users with role
+ * badges... and role count chips"). Sourced from the same `Auth/GetUserList`
+ * endpoint as `UnassignedUser` above, but exposing the additional
+ * role/country/status fields that endpoint's full (unfiltered) response
+ * includes and the user-list screen needs — `UnassignedUser` deliberately
+ * stays minimal since it only backs a combobox's option label.
+ */
+export interface UserListItem {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  employeeId?: string | null;
+  roleName: string;
+  countryId?: string | null;
+  countryCode?: string | null;
+  countryName?: string | null;
+  /** `Auth/GetUserList`'s saved example omits this field — defaults to `true` (active) when absent, per `lib/server/authResponseMappers.ts`. */
+  isActive: boolean;
+}
+
+/** Query params for `GET /api/auth/users`, backing the `/admin/users` list page. */
+export interface UserListQueryParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** One page of `UserListItem` results, as returned by `GET /api/auth/users`. */
+export interface UserListPage {
+  items: UserListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+}
+
 export interface ApiErrorBody {
   message?: string;
   errors?: Record<string, string[]>;

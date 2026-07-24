@@ -62,3 +62,31 @@ export const createUserSchema = z.object({
   roleId: guidSchema("Select a role."),
 });
 export type CreateUserFormValues = z.infer<typeof createUserSchema>;
+
+/**
+ * Server-side query schema for `GET /api/auth/unassigned-users`, backing the
+ * scroll-paginated, searchable "User" combobox on the Project Assignments
+ * screen. `Auth/GetUserList` itself documents no query parameters in
+ * `docs/HR_System_BE.postman_collection.json`, so these are applied
+ * optimistically/defensively rather than as a confirmed backend contract —
+ * see the route handler for the full rationale.
+ */
+export const unassignedUserQuerySchema = z.object({
+  search: z.string().trim().max(100, "Search term is too long.").optional(),
+  page: z.coerce.number("page must be a number.").int().min(1).optional(),
+  pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(50).optional(),
+});
+export type UnassignedUserQuery = z.infer<typeof unassignedUserQuerySchema>;
+
+/**
+ * Server-side query schema for `GET /api/auth/users`, backing the
+ * `/admin/users` "User Management" list page. Same shape/rationale as
+ * `unassignedUserQuerySchema` above — `Auth/GetUserList` documents no query
+ * parameters at all in `docs/HR_System_BE.postman_collection.json`.
+ */
+export const userListQuerySchema = z.object({
+  search: z.string().trim().max(100, "Search term is too long.").optional(),
+  page: z.coerce.number("page must be a number.").int().min(1).optional(),
+  pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(100).optional(),
+});
+export type UserListQuery = z.infer<typeof userListQuerySchema>;

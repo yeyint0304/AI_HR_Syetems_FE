@@ -6,8 +6,11 @@ import type {
   CreateUserResult,
   LoginRequest,
   Role,
-  UnassignedUser,
+  UnassignedUserListParams,
+  UnassignedUserPage,
   UpdateProfileRequest,
+  UserListPage,
+  UserListQueryParams,
 } from "@/types/auth.types";
 
 /**
@@ -52,12 +55,31 @@ export async function getRolesRequest(): Promise<Role[]> {
 }
 
 /**
- * Read-only reference data backing the "User" select box on the Project
- * Assignments form. Proxies through this app's own `/api/auth/unassigned-users`
- * Route Handler, which in turn calls the backend's `Auth/GetUserList`
- * endpoint (see `app/api/auth/unassigned-users/route.ts`).
+ * Read-only, searchable + scroll-paginated reference data backing the "User"
+ * combobox on the Project Assignments form
+ * (`components/ui/SearchableSelectField.tsx`,
+ * `hooks/useAuth.ts#useUnassignedUsersInfinite`). Proxies through this app's
+ * own `/api/auth/unassigned-users` Route Handler, which in turn calls the
+ * backend's `Auth/GetUserList` endpoint (see
+ * `app/api/auth/unassigned-users/route.ts`).
  */
-export async function getUnassignedUsersRequest(): Promise<UnassignedUser[]> {
-  const { data } = await apiClient.get<{ data: UnassignedUser[] }>("/auth/unassigned-users");
+export async function getUnassignedUsersRequest(
+  params: UnassignedUserListParams = {}
+): Promise<UnassignedUserPage> {
+  const { data } = await apiClient.get<{ data: UnassignedUserPage }>("/auth/unassigned-users", {
+    params,
+  });
+  return data.data;
+}
+
+/**
+ * Read-only, searchable + paginated reference data backing the `/admin/users`
+ * "User Management" list page (`components/auth/UsersListView.tsx`). Proxies
+ * through this app's own `/api/auth/users` Route Handler, which in turn
+ * calls the backend's `Auth/GetUserList` endpoint (see
+ * `app/api/auth/users/route.ts`).
+ */
+export async function getUserListRequest(params: UserListQueryParams = {}): Promise<UserListPage> {
+  const { data } = await apiClient.get<{ data: UserListPage }>("/auth/users", { params });
   return data.data;
 }

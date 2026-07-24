@@ -5,6 +5,7 @@ import { TimesheetHistoryView } from "@/components/timesheets/TimesheetHistoryVi
 import { apiClient } from "@/lib/api/axiosInstance";
 import { useAuthStore } from "@/stores/auth.store";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
+import { getTodayDateOnly } from "@/lib/utils/week";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -218,6 +219,42 @@ describe("TimesheetHistoryView", () => {
 
     expect(screen.getAllByRole("button", { name: /^edit$/i })).toHaveLength(1);
     expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
+  });
+
+  // `bugs/exchange-rate`: "if he updates it again then re-approval required
+  // from PA" — unlike a historical approved entry (locked, tested above), an
+  // approved entry dated *today* stays editable.
+  it("still shows Edit for the owner's own approved entry when it is dated today", async () => {
+    const todaysApprovedEntry = { ...APPROVED_ENTRY, entryDate: getTodayDateOnly() };
+    mockApi({ entries: [todaysApprovedEntry] });
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^locked$/i)).not.toBeInTheDocument();
+  });
+
+  it("edits and saves an already-approved entry dated today, surfacing a re-approval notice", async () => {
+    const todaysApprovedEntry = { ...APPROVED_ENTRY, entryDate: getTodayDateOnly() };
+    mockApi({ entries: [todaysApprovedEntry] });
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: {} });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const hoursInput = screen.getByLabelText(/hours for project alpha/i);
+    await user.clear(hoursInput);
+    await user.type(hoursInput, "6");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${APPROVED_ENTRY_ID}`, {
+        hours: 6,
+        taskDescription: "Approved work",
+      })
+    );
+    expect(await screen.findByText(/requires re-approval/i)).toBeInTheDocument();
   });
 
   it("renders an entry whose timesheet period is locked as read-only, even if not yet approved", async () => {

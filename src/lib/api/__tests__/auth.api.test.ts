@@ -2,13 +2,14 @@ import { apiClient } from "@/lib/api/axiosInstance";
 import {
   changePasswordRequest,
   createUserRequest,
+  getUnassignedUsersRequest,
   loginRequest,
   logoutRequest,
   updateProfileRequest,
 } from "@/lib/api/auth.api";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
-  apiClient: { post: jest.fn(), put: jest.fn() },
+  apiClient: { post: jest.fn(), put: jest.fn(), get: jest.fn() },
 }));
 
 describe("auth.api", () => {
@@ -77,5 +78,35 @@ describe("auth.api", () => {
 
     expect(apiClient.post).toHaveBeenCalledWith("/auth/users", payload);
     expect(result).toEqual({ id: "42" });
+  });
+
+  it("getUnassignedUsersRequest passes search/page/pageSize as query params and returns the page", async () => {
+    const page = {
+      items: [
+        { id: "u1", username: "jsmith", email: "jsmith@hrsystem.com", firstName: "Jamie", lastName: "Smith" },
+      ],
+      page: 1,
+      pageSize: 20,
+      totalCount: 1,
+      hasMore: false,
+    };
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: page } });
+
+    const result = await getUnassignedUsersRequest({ search: "jamie", page: 1, pageSize: 20 });
+
+    expect(apiClient.get).toHaveBeenCalledWith("/auth/unassigned-users", {
+      params: { search: "jamie", page: 1, pageSize: 20 },
+    });
+    expect(result).toEqual(page);
+  });
+
+  it("getUnassignedUsersRequest defaults to an empty params object", async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { data: { items: [], page: 1, pageSize: 20, totalCount: 0, hasMore: false } },
+    });
+
+    await getUnassignedUsersRequest();
+
+    expect(apiClient.get).toHaveBeenCalledWith("/auth/unassigned-users", { params: {} });
   });
 });

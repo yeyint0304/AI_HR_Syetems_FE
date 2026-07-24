@@ -59,13 +59,33 @@ describe("CreateUserForm", () => {
     expect(screen.getByRole("button", { name: /create user/i })).toBeInTheDocument();
   });
 
-  it("renders a Country select populated from the countries endpoint (GET /countries)", async () => {
+  it("renders a searchable Country combobox populated from the countries endpoint (GET /countries)", async () => {
     mockRolesResponse();
+    const user = userEvent.setup();
     renderWithClient(<CreateUserForm />);
+
+    const countryField = await screen.findByLabelText(/^country$/i);
+    expect(countryField).toHaveAttribute("role", "combobox");
+    await user.click(countryField);
 
     expect(await screen.findByRole("option", { name: "Singapore (SG)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "United States (US)" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^country$/i).tagName).toBe("SELECT");
+  });
+
+  it("filters the Country combobox's options as the user types", async () => {
+    mockRolesResponse();
+    const user = userEvent.setup();
+    renderWithClient(<CreateUserForm />);
+
+    const countryField = await screen.findByLabelText(/^country$/i);
+    await user.click(countryField);
+    await user.type(countryField, "Singa");
+
+    expect(await screen.findByRole("option", { name: "Singapore (SG)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "United States (US)" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("option", { name: "Singapore (SG)" }));
+    expect(countryField).toHaveValue("Singapore (SG)");
   });
 
   it("shows an error and disables the Country select when the countries request fails", async () => {

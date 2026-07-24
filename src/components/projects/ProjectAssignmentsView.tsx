@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
+import { SearchableSelectField, type SearchableSelectOption } from "@/components/ui/SearchableSelectField";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
@@ -18,9 +19,20 @@ import {
   useRemoveResource,
 } from "@/hooks/useProjects";
 import { useResourceRoleTypes } from "@/hooks/useResourceRoleTypes";
-import { useUnassignedUsers } from "@/hooks/useAuth";
+import { useUnassignedUsersInfinite } from "@/hooks/useAuth";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { ProjectAssignment } from "@/types/project.types";
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+function unassignedUserOptionLabel(user: {
+  firstName: string;
+  lastName: string;
+  email: string;
+}): string {
+  return `${user.firstName} ${user.lastName} — ${user.email}`.trim();
+}
 
 interface ProjectAssignmentsViewProps {
   projectId: string;
@@ -39,13 +51,17 @@ function getInitials(name?: string): string {
  * Project" form (User select + Resource role select -> `Project/AssignResource`).
  *
  * Both selects are backed by live reference-data dropdowns:
- *   - "User" is sourced from `Auth/GetUserList`
- *     (`hooks/useAuth.ts#useUnassignedUsers`) — note this only returns users
- *     with *no* project assignment at all, backend-wide, so a user already
- *     assigned to a different project won't appear here (a limitation of the
- *     documented backend contract, not this screen).
+ *   - "User" is a searchable, scroll-paginated combobox
+ *     (`components/ui/SearchableSelectField.tsx`) sourced from
+ *     `Auth/GetUserList` (`hooks/useAuth.ts#useUnassignedUsersInfinite`) —
+ *     note this only returns users with *no* project assignment at all,
+ *     backend-wide, so a user already assigned to a different project won't
+ *     appear here (a limitation of the documented backend contract, not
+ *     this screen). Typing filters the list (debounced); scrolling to the
+ *     bottom of the list loads the next page.
  *   - "Resource role" is sourced from `ResourceRoleType/GetAllResourceRoleTypes`
- *     (`hooks/useResourceRoleTypes.ts`).
+ *     (`hooks/useResourceRoleTypes.ts`) — a small, fully-loaded list, so it
+ *     stays a plain `SelectField`.
  */
 export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProps) {
   const [formError, setFormError] = useState<string | null>(null);
@@ -53,6 +69,9 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
     null
   );
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [userSearchTerm, setUserSearchTerm] = useState("");
+  const [selectedUserOption, setSelectedUserOption] = useState<SearchableSelectOption | null>(null);
+  const debouncedUserSearchTerm = useDebouncedValue(userSearchTerm, SEARCH_DEBOUNCE_MS);
 
   const { data: project, isLoading: isProjectLoading } = useProject(projectId);
   const {
@@ -64,11 +83,38 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
   } = useProjectAssignments(projectId);
   const { data: resourceRoleTypes, isLoading: isRoleTypesLoading } = useResourceRoleTypes();
   const {
-    data: unassignedUsers,
+    data: unassignedUsersPages,
     isLoading: isUnassignedUsersLoading,
+    isFetchingNextPage: isFetchingMoreUnassignedUsers,
+    hasNextPage: hasMoreUnassignedUsers,
+    fetchNextPage: fetchMoreUnassignedUsers,
     isError: isUnassignedUsersError,
     error: unassignedUsersError,
-  } = useUnassignedUsers();
+    refetch: refetchUnassignedUsers,
+  } = useUnassignedUsersInfinite(debouncedUserSearchTerm);
+
+  const unassignedUserOptions: SearchableSelectOption[] = useMemo(
+    () =>
+      (unassignedUsersPages?.pages ?? []).flatMap((page) =>
+        page.items.map((candidate) => ({
+          value: candidate.id,
+          label: unassignedUserOptionLabel(candidate),
+        }))
+      ),
+    [unassignedUsersPages]
+  );
+
+  // Only treat this as "no unassigned users at all" (persistent, page-level
+  // empty state that disables the whole form) when there's no active search
+  // — otherwise a search with zero matches would incorrectly look like the
+  // system has no unassigned users, when `SearchableSelectField`'s own
+  // in-popup `emptyMessage` already communicates "no matches" for that case.
+  const totalUnassignedUsers = unassignedUsersPages?.pages[0]?.totalCount ?? 0;
+  const noUnassignedUsersAtAll =
+    !debouncedUserSearchTerm &&
+    !isUnassignedUsersLoading &&
+    !isUnassignedUsersError &&
+    totalUnassignedUsers === 0;
 
   const assignResourceMutation = useAssignResource(projectId);
   const removeResourceMutation = useRemoveResource(projectId);
@@ -86,7 +132,11 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
     assignResourceMutation.mutate(values, {
-      onSuccess: () => reset(),
+      onSuccess: () => {
+        reset();
+        setSelectedUserOption(null);
+        setUserSearchTerm("");
+      },
       onError: (mutationError) => {
         setFormError(getApiErrorMessage(mutationError, "Unable to assign the user. Please try again."));
       },
@@ -193,15 +243,7 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
           </div>
         )}
 
-        {isUnassignedUsersError && (
-          <div className="mt-4">
-            <Alert variant="error">
-              {getApiErrorMessage(unassignedUsersError, "Unable to load users available to assign.")}
-            </Alert>
-          </div>
-        )}
-
-        {!isUnassignedUsersLoading && !isUnassignedUsersError && (unassignedUsers?.length ?? 0) === 0 && (
+        {noUnassignedUsersAtAll && (
           <div className="mt-4">
             <Alert variant="info">
               There are no unassigned users available right now — every user already belongs to a
@@ -216,26 +258,39 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
               control={control}
               name="userId"
               render={({ field }) => (
-                <SelectField
+                <SearchableSelectField
                   label="User"
                   name={field.name}
-                  ref={field.ref}
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChange={field.onChange}
-                  disabled={isUnassignedUsersLoading || (unassignedUsers?.length ?? 0) === 0}
+                  disabled={noUnassignedUsersAtAll}
                   placeholder={
-                    isUnassignedUsersLoading
-                      ? "Loading users…"
-                      : (unassignedUsers?.length ?? 0) === 0
-                        ? "No unassigned users available"
-                        : "Select a user..."
+                    noUnassignedUsersAtAll ? "No unassigned users available" : "Search by name or email…"
                   }
+                  selectedOption={selectedUserOption}
+                  onSelect={(option) => {
+                    setSelectedUserOption(option);
+                    field.onChange(option.value);
+                  }}
+                  searchTerm={userSearchTerm}
+                  onSearchTermChange={setUserSearchTerm}
+                  options={unassignedUserOptions}
+                  isLoading={isUnassignedUsersLoading}
+                  isFetchingMore={isFetchingMoreUnassignedUsers}
+                  hasMore={Boolean(hasMoreUnassignedUsers)}
+                  onLoadMore={() => {
+                    void fetchMoreUnassignedUsers();
+                  }}
+                  loadError={
+                    isUnassignedUsersError
+                      ? getApiErrorMessage(unassignedUsersError, "Unable to load users available to assign.")
+                      : null
+                  }
+                  onRetryLoad={() => {
+                    void refetchUnassignedUsers();
+                  }}
                   error={errors.userId?.message}
-                  options={(unassignedUsers ?? []).map((candidate) => ({
-                    value: candidate.id,
-                    label: `${candidate.firstName} ${candidate.lastName} — ${candidate.email}`.trim(),
-                  }))}
+                  emptyMessage={
+                    debouncedUserSearchTerm ? "No matching users found." : "No unassigned users available."
+                  }
                 />
               )}
             />
@@ -266,7 +321,7 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
           <Button
             type="submit"
             isLoading={assignResourceMutation.isPending}
-            disabled={(unassignedUsers?.length ?? 0) === 0}
+            disabled={noUnassignedUsersAtAll}
           >
             Add User
           </Button>

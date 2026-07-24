@@ -1,5 +1,11 @@
 import "server-only";
-import type { Role, UnassignedUser } from "@/types/auth.types";
+import type {
+  Role,
+  UnassignedUser,
+  UnassignedUserPage,
+  UserListItem,
+  UserListPage,
+} from "@/types/auth.types";
 import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
 
@@ -93,6 +99,87 @@ export function mapBackendUnassignedUser(raw: unknown): UnassignedUser | null {
   };
 }
 
+interface RawUserListItem extends RawUnassignedUser {
+  RoleName?: string;
+  roleName?: string;
+  CountryId?: string | null;
+  countryId?: string | null;
+  CountryCode?: string | null;
+  countryCode?: string | null;
+  CountryName?: string | null;
+  countryName?: string | null;
+  IsActive?: boolean;
+  isActive?: boolean;
+}
+
+/**
+ * Maps a single backend `Auth/GetUserList` item into the fuller `UserListItem`
+ * shape the `/admin/users` list page renders (role/country/status), unlike
+ * `mapBackendUnassignedUser` above (which only keeps the fields a combobox
+ * option label needs). Returns `null` if the minimum required fields are
+ * missing.
+ */
+export function mapBackendUserListItem(raw: unknown): UserListItem | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as RawUserListItem;
+  const id = r.UserId ?? r.userId ?? r.Id ?? r.id;
+  const username = r.Username ?? r.username;
+  const email = r.Email ?? r.email;
+  if (!id || !username || !email) return null;
+
+  return {
+    id,
+    username,
+    email,
+    firstName: r.FirstName ?? r.firstName ?? "",
+    lastName: r.LastName ?? r.lastName ?? "",
+    employeeId: r.EmployeeId ?? r.employeeId ?? null,
+    roleName: r.RoleName ?? r.roleName ?? "—",
+    countryId: r.CountryId ?? r.countryId ?? null,
+    countryCode: r.CountryCode ?? r.countryCode ?? null,
+    countryName: r.CountryName ?? r.countryName ?? null,
+    // The saved "Get User List" example in
+    // `docs/HR_System_BE.postman_collection.json` omits `IsActive` entirely
+    // (unlike "Search Users", which includes it) — default to active rather
+    // than rendering every user as inactive when the field is simply absent.
+    isActive: Boolean(r.IsActive ?? r.isActive ?? true),
+  };
+}
+
+/**
+ * Maps `Auth/GetUserList`'s response into a paginated `UserListPage`, backing
+ * the `/admin/users` list page. Tolerates the same two response shapes as
+ * `mapBackendUnassignedUserPage` above (a bare `Data` array vs. the live
+ * backend's `Data: { TotalCount, PageNo, PageSize, Items: [...] }` envelope).
+ */
+export function mapBackendUserListPage(
+  raw: unknown,
+  requestedPage: number,
+  requestedPageSize: number
+): UserListPage {
+  const envelope = readBackendEnvelope(raw);
+  const payload = envelope.isSuccess ? envelope.data : raw;
+
+  const items = extractArray(payload)
+    .map(mapBackendUserListItem)
+    .filter((user): user is UserListItem => user !== null);
+
+  const r = (typeof payload === "object" && payload !== null ? payload : {}) as RawUnassignedUserPage;
+  const page = asFiniteNumber(r.PageNo ?? r.pageNo ?? r.Page ?? r.page, requestedPage);
+  const pageSize = asFiniteNumber(r.PageSize ?? r.pageSize, requestedPageSize);
+  const totalCountRaw = r.TotalCount ?? r.totalCount;
+  const isPaginatedShape = typeof totalCountRaw === "number";
+  const totalCount = isPaginatedShape ? totalCountRaw : items.length;
+
+  return {
+    items,
+    page,
+    pageSize,
+    totalCount,
+    hasMore: isPaginatedShape && items.length > 0 && page * pageSize < totalCount,
+  };
+}
+
 /**
  * Maps `Auth/GetUserList`'s response into a flat `UnassignedUser[]`.
  *
@@ -115,4 +202,60 @@ export function mapBackendUnassignedUserList(raw: unknown): UnassignedUser[] {
   return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendUnassignedUser)
     .filter((user): user is UnassignedUser => user !== null);
+}
+
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+interface RawUnassignedUserPage {
+  TotalCount?: number;
+  totalCount?: number;
+  PageNo?: number;
+  pageNo?: number;
+  Page?: number;
+  page?: number;
+  PageSize?: number;
+  pageSize?: number;
+}
+
+/**
+ * Maps `Auth/GetUserList`'s response into a paginated `UnassignedUserPage`,
+ * backing the scroll-paginated "User" combobox
+ * (`hooks/useAuth.ts#useUnassignedUsersInfinite`). Tolerates both response
+ * shapes seen for this endpoint (see `mapBackendUnassignedUserList`'s doc
+ * comment): a bare `Data` array (per the saved Postman example — treated as
+ * the complete result set, so `hasMore` is `false`) and the live backend's
+ * actual `Data: { TotalCount, PageNo, PageSize, Items: [...] }` envelope
+ * (`hasMore` derived from `page * pageSize < totalCount`).
+ *
+ * `requestedPage`/`requestedPageSize` are used as fallbacks when the
+ * backend's response doesn't echo them back explicitly.
+ */
+export function mapBackendUnassignedUserPage(
+  raw: unknown,
+  requestedPage: number,
+  requestedPageSize: number
+): UnassignedUserPage {
+  const envelope = readBackendEnvelope(raw);
+  const payload = envelope.isSuccess ? envelope.data : raw;
+
+  const items = extractArray(payload)
+    .map(mapBackendUnassignedUser)
+    .filter((user): user is UnassignedUser => user !== null);
+
+  const r = (typeof payload === "object" && payload !== null ? payload : {}) as RawUnassignedUserPage;
+  const page = asFiniteNumber(r.PageNo ?? r.pageNo ?? r.Page ?? r.page, requestedPage);
+  const pageSize = asFiniteNumber(r.PageSize ?? r.pageSize, requestedPageSize);
+  const totalCountRaw = r.TotalCount ?? r.totalCount;
+  const isPaginatedShape = typeof totalCountRaw === "number";
+  const totalCount = isPaginatedShape ? totalCountRaw : items.length;
+
+  return {
+    items,
+    page,
+    pageSize,
+    totalCount,
+    hasMore: isPaginatedShape && items.length > 0 && page * pageSize < totalCount,
+  };
 }

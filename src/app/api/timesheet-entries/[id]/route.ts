@@ -107,10 +107,19 @@ export async function GET(_request: Request, { params }: RouteParams) {
 /**
  * PUT /api/timesheet-entries/[id]
  * [Auth] Updates `Hours`/`TaskDescription` via `TimesheetEntry/UpdateTimesheetEntry`.
- * Only the owning user (or a SystemAdmin/ProjectAdmin) may edit an entry, and
- * only while it is still pending approval — once `IsApproved` is true the
- * entry is locked, matching the wireframe's "Locked" state for approved rows
- * (`docs/HR_System_FE_wireframe.pdf`, `/timesheets/history`).
+ * Only the owning user (or a SystemAdmin/ProjectAdmin) may edit an entry.
+ *
+ * Per the `bugs/exchange-rate` feature request ("if he updates it again then
+ * re-approval required from PA"), an already-approved entry is *not*
+ * rejected here — the backend's own documented contract for this endpoint
+ * ("Timesheet entry updated successfully. Re-approval required." — see the
+ * saved example in `docs/HR_System_BE.postman_collection.json`) already
+ * resets the entry to pending as a result of this same call, so this Route
+ * Handler simply forwards the update and lets that happen; the client-side
+ * "only today's entries stay editable once approved" rule
+ * (`components/timesheets/MyTimesheetView.tsx#isCellLocked`,
+ * `components/timesheets/TimesheetHistoryView.tsx#canEditOwnEntry`) is a UX
+ * constraint, not a server-enforced one.
  *
  * A manager editing *someone else's* entry (not their own) is additionally
  * scoped to projects they're assigned to, per `canManagerActOnProjectEntry`
@@ -171,13 +180,6 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    if (result.entry.isApproved) {
-      return NextResponse.json(
-        { message: "Approved timesheet entries cannot be edited." },
-        { status: 409 }
-      );
-    }
-
     const response = await backendApiClient.put(
       `/TimesheetEntry/UpdateTimesheetEntry/${id}`,
       toBackendUpdateTimesheetEntryPayload(parsed.data),
@@ -210,7 +212,15 @@ export async function PUT(request: Request, { params }: RouteParams) {
 /**
  * DELETE /api/timesheet-entries/[id]
  * [Auth] Deletes a timesheet entry via `TimesheetEntry/DeleteTimesheetEntry`.
- * Same ownership + approval-lock rules as `PUT` above.
+ * Same ownership rules as `PUT` above, but — unlike `PUT` — deleting an
+ * already-approved entry is still rejected (409) below: the
+ * `bugs/exchange-rate` feature request only asks for *editing* an approved
+ * entry to trigger re-approval, not for approved entries to become
+ * deletable. Note that `MyTimesheetView`'s "clear an entry's hours" action
+ * calls this same endpoint, so clearing today's already-approved entry down
+ * to empty hours still fails here with the 409 below (surfaced to the user
+ * as a save error), even though editing its hours to a new non-empty value
+ * is allowed.
  */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { id } = await params;

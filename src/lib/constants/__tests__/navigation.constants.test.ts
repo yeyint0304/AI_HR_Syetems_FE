@@ -16,6 +16,9 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/reports/cost-revenue")).toBe("Cost & Revenue Report");
       expect(getBreadcrumbLabel("/invoices")).toBe("Invoices");
       expect(getBreadcrumbLabel("/invoices/generate")).toBe("Generate Invoice");
+      expect(getBreadcrumbLabel("/admin/exchange-rates")).toBe("Exchange Rates");
+      expect(getBreadcrumbLabel("/admin/users")).toBe("Users");
+      expect(getBreadcrumbLabel("/admin/rate-cards")).toBe("Rate Cards");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -76,11 +79,27 @@ describe("navigation.constants", () => {
     expect(billingSection?.requiredRole).toBeUndefined();
   });
 
-  it("marks the Users nav item as implemented, linking to Create User, restricted to SystemAdmin", () => {
+  it("marks the Users nav item as implemented, linking to the User Management list, restricted to SystemAdmin", () => {
     const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
     const usersItem = adminSection?.items.find((item) => item.label === "Users");
     expect(usersItem?.implemented).toBe(true);
-    expect(usersItem?.href).toBe("/admin/users/new");
+    expect(usersItem?.href).toBe("/admin/users");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Exchange Rates nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const exchangeRatesItem = adminSection?.items.find((item) => item.label === "Exchange Rates");
+    expect(exchangeRatesItem?.implemented).toBe(true);
+    expect(exchangeRatesItem?.href).toBe("/admin/exchange-rates");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Rate Cards nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const rateCardsItem = adminSection?.items.find((item) => item.label === "Rate Cards");
+    expect(rateCardsItem?.implemented).toBe(true);
+    expect(rateCardsItem?.href).toBe("/admin/rate-cards");
     expect(adminSection?.requiredRole).toBe("SystemAdmin");
   });
 });

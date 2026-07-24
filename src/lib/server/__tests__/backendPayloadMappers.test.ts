@@ -4,6 +4,7 @@
 import {
   toBackendAssignResourcePayload,
   toBackendChangePasswordPayload,
+  toBackendCreateExchangeRatePayload,
   toBackendCreateProjectPayload,
   toBackendCreateTimesheetEntryPayload,
   toBackendCreateTimesheetPeriodPayload,
@@ -11,6 +12,7 @@ import {
   toBackendLoginPayload,
   toBackendLogoutPayload,
   toBackendRefreshTokenPayload,
+  toBackendUpdateExchangeRatePayload,
   toBackendUpdateProfilePayload,
   toBackendUpdateProjectPayload,
   toBackendUpdateTimesheetEntryPayload,
@@ -213,6 +215,38 @@ describe("backendPayloadMappers", () => {
     ).toEqual({
       Hours: 6,
       TaskDescription: "Updated task description",
+    });
+  });
+
+  it("maps a create-exchange-rate payload to PascalCase", () => {
+    expect(
+      toBackendCreateExchangeRatePayload({
+        fromCurrencyId: "33333333-3333-3333-3333-333333333301",
+        toCurrencyId: "33333333-3333-3333-3333-333333333302",
+        rate: 1.25,
+        effectiveDate: "2026-06-22",
+        isActive: true,
+      })
+    ).toEqual({
+      FromCurrencyId: "33333333-3333-3333-3333-333333333301",
+      ToCurrencyId: "33333333-3333-3333-3333-333333333302",
+      Rate: 1.25,
+      EffectiveDate: "2026-06-22",
+      IsActive: true,
+    });
+  });
+
+  it("maps an update-exchange-rate payload to PascalCase, without currency ids", () => {
+    expect(
+      toBackendUpdateExchangeRatePayload({
+        rate: 1.3,
+        effectiveDate: "2026-06-22",
+        isActive: false,
+      })
+    ).toEqual({
+      Rate: 1.3,
+      EffectiveDate: "2026-06-22",
+      IsActive: false,
     });
   });
 });

@@ -48,12 +48,16 @@ describe("UpdateProfileForm", () => {
     expect(screen.getByLabelText(/email address/i)).toHaveValue("jane@example.com");
   });
 
-  it("renders a Country select populated from the countries endpoint (GET /countries)", async () => {
+  it("renders a searchable Country combobox populated from the countries endpoint (GET /countries)", async () => {
+    const user = userEvent.setup();
     renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+
+    const countryField = await screen.findByLabelText(/^country$/i);
+    expect(countryField).toHaveAttribute("role", "combobox");
+    await user.click(countryField);
 
     expect(await screen.findByRole("option", { name: "Singapore (SG)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "United States (US)" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^country$/i).tagName).toBe("SELECT");
   });
 
   it("shows an error and disables the Country select when the countries request fails", async () => {

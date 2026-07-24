@@ -34,3 +34,11 @@ export const PUBLIC_ROUTES = ["/login"];
 
 /** Route prefix reserved for SystemAdmin-only screens. */
 export const ADMIN_ROUTE_PREFIX = "/admin";
+
+/**
+ * Default page size requested per fetch for the scroll-paginated "User"
+ * combobox on the Project Assignments screen
+ * (`GET /api/auth/unassigned-users`, `hooks/useAuth.ts#useUnassignedUsersInfinite`).
+ * Kept small since each additional page is only fetched on scroll-to-bottom.
+ */
+export const UNASSIGNED_USERS_PAGE_SIZE = 20;
