@@ -143,6 +143,31 @@ describe("CurrenciesListView", () => {
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith(`/currencies/${USD_ID}`));
   });
 
+  it("paginates the table client-side when there are more currencies than fit on one page", async () => {
+    const manyCurrencies = Array.from({ length: 25 }, (_, index) => ({
+      id: `currency-${index}`,
+      code: `C${String(index).padStart(2, "0")}`,
+      name: `Currency ${index}`,
+      symbol: "$",
+      isBaseCurrency: false,
+      isActive: true,
+    }));
+    mockApiGet(manyCurrencies);
+    const user = userEvent.setup();
+    renderWithClient(<CurrenciesListView />);
+
+    await screen.findByText("C00");
+    expect(screen.queryByText("C20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /currencies pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("C20")).toBeInTheDocument();
+    expect(screen.queryByText("C00")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("shows an inline error and keeps the confirm dialog open when deletion fails", async () => {
     mockApiGet();
     (apiClient.delete as jest.Mock).mockRejectedValueOnce({
