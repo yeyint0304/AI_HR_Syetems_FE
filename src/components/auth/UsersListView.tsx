@@ -5,8 +5,10 @@ import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useUserList } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
 import type { UserListItem } from "@/types/auth.types";
@@ -64,6 +66,7 @@ export function UsersListView() {
 
   const users = useMemo(() => userPage?.items ?? [], [userPage]);
   const roleSummary = useMemo(() => summarizeByRole(users), [users]);
+  const { page, setPage, totalPages, pageItems: pagedUsers } = useTablePagination(users);
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,7 +157,7 @@ export function UsersListView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((user) => {
+                {pagedUsers.map((user) => {
                   const name = `${user.firstName} ${user.lastName}`.trim() || user.username;
                   return (
                     <tr key={user.id}>
@@ -192,6 +195,8 @@ export function UsersListView() {
           </div>
         </div>
       )}
+
+      <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} label="Users pagination" />
     </div>
   );
 }

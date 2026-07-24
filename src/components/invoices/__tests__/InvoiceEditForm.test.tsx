@@ -18,6 +18,14 @@ function renderWithClient(ui: React.ReactElement) {
 
 const CURRENCY_SGD = { id: "c1", code: "SGD", name: "Singapore Dollar", symbol: "S$", isBaseCurrency: true, isActive: true };
 const CURRENCY_USD = { id: "c2", code: "USD", name: "US Dollar", symbol: "$", isBaseCurrency: false, isActive: true };
+const CURRENCY_MMK_INACTIVE = {
+  id: "c3",
+  code: "MMK",
+  name: "Myanmar Kyats",
+  symbol: "K",
+  isBaseCurrency: false,
+  isActive: false,
+};
 
 const DRAFT_INVOICE: InvoiceDetail = {
   id: "inv-1",
@@ -39,9 +47,9 @@ const DRAFT_INVOICE: InvoiceDetail = {
   lineItems: [],
 };
 
-function mockGetCurrencies() {
+function mockGetCurrencies(currencies: unknown[] = [CURRENCY_SGD, CURRENCY_USD]) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url === "/currencies") return Promise.resolve({ data: { data: [CURRENCY_SGD, CURRENCY_USD] } });
+    if (url === "/currencies") return Promise.resolve({ data: { data: currencies } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
 }
@@ -64,6 +72,20 @@ describe("InvoiceEditForm", () => {
     expect(screen.getByLabelText(/due date/i)).toHaveValue("2025-02-15");
     expect(screen.getByLabelText(/notes/i)).toHaveValue("Thanks for your business.");
     await waitFor(() => expect(screen.getByLabelText(/invoice currency/i)).toHaveValue("c1"));
+  });
+
+  it("excludes inactive/retired currencies from the Invoice Currency dropdown", async () => {
+    // Regression guard: `GET /api/currencies` no longer filters `isActive`
+    // server-side (it now also backs the Administration > Currencies CRUD
+    // screen, which must show inactive currencies too), so any retired
+    // currency returned by the shared endpoint must not be offered here
+    // when editing an invoice's currency.
+    mockGetCurrencies([CURRENCY_SGD, CURRENCY_USD, CURRENCY_MMK_INACTIVE]);
+    renderWithClient(<InvoiceEditForm invoice={DRAFT_INVOICE} onCancel={onCancel} onSaved={onSaved} />);
+
+    await screen.findByRole("option", { name: /US Dollar/i });
+
+    expect(screen.queryByRole("option", { name: /Myanmar Kyats/i })).not.toBeInTheDocument();
   });
 
   it("rejects an invalid client email on submit", async () => {

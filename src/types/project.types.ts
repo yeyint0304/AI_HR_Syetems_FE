@@ -56,9 +56,29 @@ export interface AssignResourceRequest {
   resourceRoleTypeId: string;
 }
 
-/** Reference data backing the "Resource role" dropdown on the Assignments screen. */
+/**
+ * Reference data backing the "Resource role" dropdown on the Assignments
+ * screen, as well as the full CRUD `/admin/resource-role-types` screen (see
+ * `components/resourceRoleTypes/ResourceRoleTypesListView.tsx`). Field set
+ * matches `docs/HR_System_BE.postman_collection.json`'s "Reference Data -
+ * Resource Role Type" folder (`ResourceRoleType/GetAllResourceRoleTypes`,
+ * `ResourceRoleType/CreateResourceRoleType`,
+ * `ResourceRoleType/UpdateResourceRoleType`).
+ */
 export interface ResourceRoleType {
   id: string;
+  name: string;
+  description?: string | null;
+}
+
+/** Matches `ResourceRoleType/CreateResourceRoleType` — `name` must be unique; `description` is optional. */
+export interface CreateResourceRoleTypeRequest {
+  name: string;
+  description?: string | null;
+}
+
+/** Matches `ResourceRoleType/UpdateResourceRoleType` — same shape as create; both fields may be changed. */
+export interface UpdateResourceRoleTypeRequest {
   name: string;
   description?: string | null;
 }

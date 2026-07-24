@@ -12,6 +12,7 @@ import { useUpdateInvoice } from "@/hooks/useInvoices";
 import { updateInvoiceSchema, type UpdateInvoiceFormValues } from "@/lib/validators/invoice.validators";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { toDateInputValue } from "@/lib/utils/date";
+import { filterSelectableCurrencies } from "@/lib/utils/currency";
 import type { InvoiceDetail } from "@/types/invoice.types";
 
 interface InvoiceEditFormProps {
@@ -32,8 +33,11 @@ export function InvoiceEditForm({ invoice, onCancel, onSaved }: InvoiceEditFormP
   const updateInvoiceMutation = useUpdateInvoice(invoice.id);
 
   const sortedCurrencies = useMemo(
-    () => [...(currencies ?? [])].sort((a, b) => a.code.localeCompare(b.code)),
-    [currencies]
+    () =>
+      filterSelectableCurrencies([...(currencies ?? [])], invoice.currency.id).sort((a, b) =>
+        a.code.localeCompare(b.code)
+      ),
+    [currencies, invoice.currency.id]
   );
 
   const {

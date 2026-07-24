@@ -21,6 +21,12 @@ import type {
   UpdateExchangeRateRequest,
 } from "@/types/exchangeRate.types";
 import type { CreateRateCardRequest, UpdateRateCardRequest } from "@/types/rateCard.types";
+import type { CreateCurrencyRequest, UpdateCurrencyRequest } from "@/types/currency.types";
+import type { CreateCountryRequest, UpdateCountryRequest } from "@/types/country.types";
+import type {
+  CreateResourceRoleTypeRequest,
+  UpdateResourceRoleTypeRequest,
+} from "@/types/project.types";
 
 /**
  * The HR System backend is configured with `PropertyNamingPolicy = null`
@@ -211,5 +217,56 @@ export function toBackendUpdateRateCardPayload(payload: UpdateRateCardRequest) {
     BillingRate: payload.billingRate,
     EffectiveDate: payload.effectiveDate,
     IsActive: payload.isActive,
+  };
+}
+
+/** Matches `Currency/CreateCurrency`. */
+export function toBackendCreateCurrencyPayload(payload: CreateCurrencyRequest) {
+  return {
+    Code: payload.code,
+    Name: payload.name,
+    Symbol: payload.symbol,
+    IsBaseCurrency: payload.isBaseCurrency,
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `Currency/UpdateCurrency`, which only accepts Name/Symbol/IsActive (the code and base-currency flag are immutable after creation). */
+export function toBackendUpdateCurrencyPayload(payload: UpdateCurrencyRequest) {
+  return {
+    Name: payload.name,
+    Symbol: payload.symbol,
+    IsActive: payload.isActive,
+  };
+}
+
+/** Matches `Country/CreateCountry`. */
+export function toBackendCreateCountryPayload(payload: CreateCountryRequest) {
+  return {
+    Code: payload.code,
+    Name: payload.name,
+  };
+}
+
+/** Matches `Country/UpdateCountry`, which only accepts Name (the code is immutable after creation). */
+export function toBackendUpdateCountryPayload(payload: UpdateCountryRequest) {
+  return {
+    Name: payload.name,
+  };
+}
+
+/** Matches `ResourceRoleType/CreateResourceRoleType`. */
+export function toBackendCreateResourceRoleTypePayload(payload: CreateResourceRoleTypeRequest) {
+  return {
+    Name: payload.name,
+    Description: payload.description || null,
+  };
+}
+
+/** Matches `ResourceRoleType/UpdateResourceRoleType` (same shape as create — both fields may be changed). */
+export function toBackendUpdateResourceRoleTypePayload(payload: UpdateResourceRoleTypeRequest) {
+  return {
+    Name: payload.name,
+    Description: payload.description || null,
   };
 }

@@ -19,6 +19,10 @@ describe("navigation.constants", () => {
       expect(getBreadcrumbLabel("/admin/exchange-rates")).toBe("Exchange Rates");
       expect(getBreadcrumbLabel("/admin/users")).toBe("Users");
       expect(getBreadcrumbLabel("/admin/rate-cards")).toBe("Rate Cards");
+      expect(getBreadcrumbLabel("/admin/currencies")).toBe("Currencies");
+      expect(getBreadcrumbLabel("/admin/countries")).toBe("Countries");
+      expect(getBreadcrumbLabel("/admin/resource-role-types")).toBe("Resource Role Types");
+      expect(getBreadcrumbLabel("/admin/roles")).toBe("Roles");
     });
 
     it("resolves the dynamic project edit route", () => {
@@ -100,6 +104,40 @@ describe("navigation.constants", () => {
     const rateCardsItem = adminSection?.items.find((item) => item.label === "Rate Cards");
     expect(rateCardsItem?.implemented).toBe(true);
     expect(rateCardsItem?.href).toBe("/admin/rate-cards");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Currencies nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const currenciesItem = adminSection?.items.find((item) => item.label === "Currencies");
+    expect(currenciesItem?.implemented).toBe(true);
+    expect(currenciesItem?.href).toBe("/admin/currencies");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Countries nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const countriesItem = adminSection?.items.find((item) => item.label === "Countries");
+    expect(countriesItem?.implemented).toBe(true);
+    expect(countriesItem?.href).toBe("/admin/countries");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Resource Role Types nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const resourceRoleTypesItem = adminSection?.items.find(
+      (item) => item.label === "Resource Role Types"
+    );
+    expect(resourceRoleTypesItem?.implemented).toBe(true);
+    expect(resourceRoleTypesItem?.href).toBe("/admin/resource-role-types");
+    expect(adminSection?.requiredRole).toBe("SystemAdmin");
+  });
+
+  it("marks the Roles nav item as implemented, restricted to SystemAdmin", () => {
+    const adminSection = NAV_SECTIONS.find((section) => section.label === "Administration");
+    const rolesItem = adminSection?.items.find((item) => item.label === "Roles");
+    expect(rolesItem?.implemented).toBe(true);
+    expect(rolesItem?.href).toBe("/admin/roles");
     expect(adminSection?.requiredRole).toBe("SystemAdmin");
   });
 });

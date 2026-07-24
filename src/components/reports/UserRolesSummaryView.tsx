@@ -5,8 +5,10 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useProjectList } from "@/hooks/useProjects";
 import { useUserRolesSummary } from "@/hooks/useReports";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { buildUserRolesSummaryExportUrl } from "@/lib/api/report.api";
 import { EXPORT_FORMAT_OPTIONS } from "@/lib/constants/report.constants";
 import { userRolesSummaryFilterSchema } from "@/lib/validators/report.validators";
@@ -81,6 +83,13 @@ export function UserRolesSummaryView() {
       valueLabel: `${row.totalHours}h`,
     }));
   }, [report]);
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedSummaryRows,
+  } = useTablePagination(report?.summary ?? []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -180,7 +189,7 @@ export function UserRolesSummaryView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {report.summary.map((row) => {
+                  {pagedSummaryRows.map((row) => {
                     const avgHours = row.userCount > 0 ? row.totalHours / row.userCount : 0;
                     const percentOfTotal = report.grandTotalHours > 0 ? (row.totalHours / report.grandTotalHours) * 100 : 0;
                     return (
@@ -207,6 +216,14 @@ export function UserRolesSummaryView() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+            <div className="border-t border-slate-200 p-4">
+              <TablePagination
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                label="User roles summary pagination"
+              />
             </div>
           </div>
 

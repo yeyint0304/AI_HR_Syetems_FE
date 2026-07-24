@@ -8,12 +8,15 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { SelectField } from "@/components/ui/SelectField";
 import { RateCardForm } from "@/components/rateCards/RateCardForm";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useCountryList } from "@/hooks/useCountries";
 import { useCurrencyList } from "@/hooks/useCurrencies";
 import { useResourceRoleTypes } from "@/hooks/useResourceRoleTypes";
 import { useDeleteRateCard, useRateCardList } from "@/hooks/useRateCards";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
+import { filterSelectableCurrencies } from "@/lib/utils/currency";
 import type { RateCard } from "@/types/rateCard.types";
 
 type ModalState = { mode: "create" } | { mode: "edit"; rateCard: RateCard } | null;
@@ -100,11 +103,27 @@ export function RateCardsListView() {
 
   const countrySummaries = useMemo(() => summarizeByCountry(rateCards ?? []), [rateCards]);
 
+  // Retired currencies must not be offered as a selection for a *new* rate
+  // card — see `lib/utils/currency.ts`'s docblock. (In edit mode
+  // `RateCardForm` renders the currency as read-only text, not this list, so
+  // no "keep the current selection" exception is needed here.)
+  const selectableCurrencies = useMemo(
+    () => filterSelectableCurrencies(currencies ?? []),
+    [currencies]
+  );
+
   const visibleRateCards = useMemo(() => {
     const list = rateCards ?? [];
     if (!countryFilter) return list;
     return list.filter((rateCard) => rateCard.country.id === countryFilter);
   }, [rateCards, countryFilter]);
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedRateCards,
+  } = useTablePagination(visibleRateCards);
 
   function handleRetry() {
     refetchCountries();
@@ -125,7 +144,7 @@ export function RateCardsListView() {
   }
 
   const canAddRateCard =
-    (countries?.length ?? 0) > 0 && (resourceRoleTypes?.length ?? 0) > 0 && (currencies?.length ?? 0) > 0;
+    (countries?.length ?? 0) > 0 && (resourceRoleTypes?.length ?? 0) > 0 && selectableCurrencies.length > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -242,7 +261,7 @@ export function RateCardsListView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {visibleRateCards.map((rateCard) => (
+                    {pagedRateCards.map((rateCard) => (
                       <tr key={rateCard.id}>
                         <td className="px-4 py-3 font-medium text-slate-900">{rateCard.country.name}</td>
                         <td className="px-4 py-3 text-slate-700">{rateCard.resourceRoleType.name}</td>
@@ -277,6 +296,13 @@ export function RateCardsListView() {
             )}
           </div>
 
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            label="Rate cards pagination"
+          />
+
           <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">
             <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p>
@@ -300,7 +326,7 @@ export function RateCardsListView() {
               mode={modalState?.mode ?? "create"}
               countries={countries ?? []}
               resourceRoleTypes={resourceRoleTypes ?? []}
-              currencies={currencies ?? []}
+              currencies={selectableCurrencies}
               rateCard={modalState?.mode === "edit" ? modalState.rateCard : undefined}
               onSuccess={() => setModalState(null)}
               onCancel={() => setModalState(null)}
