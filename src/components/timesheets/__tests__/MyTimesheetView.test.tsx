@@ -10,12 +10,14 @@ jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
 
-// `MyTimesheetView` only allows logging/editing hours for the *present* day
-// (see `isCellLocked` — the `bugs/timesheet-history` "present day only" fix).
-// Pinning `getTodayDateOnly()` to the Monday fixture date below keeps every
-// existing test's "editable Monday cell" assumption intact regardless of the
-// real wall-clock date the suite happens to run on, while still exercising
-// the real `isCellLocked`/`isDateOnlyInRange` logic for every other date.
+// `MyTimesheetView` allows logging/editing hours for today and any past day,
+// but *not* for future days (see `isCellLocked` — the `feature/currency`
+// "disable only future dates" relaxation of the earlier `bugs/timesheet-history`
+// "present day only" fix). Pinning `getTodayDateOnly()` to the Monday fixture
+// date below keeps every existing test's "editable Monday cell" assumption
+// intact regardless of the real wall-clock date the suite happens to run on,
+// while still exercising the real `isCellLocked`/`isDateOnlyInRange` logic for
+// every other date.
 jest.mock("@/lib/utils/week", () => ({
   ...jest.requireActual("@/lib/utils/week"),
   getTodayDateOnly: () => "2025-01-06",
@@ -92,8 +94,9 @@ const APPROVED_ENTRY = {
   isApproved: true,
 };
 
-// Still-pending, unlocked-period entry — but *not* on today's mocked date
-// (2025-01-06), so it should render read-only per the "present day only" rule.
+// Still-pending, unlocked-period entry dated the day *after* today's mocked
+// date (2025-01-06) — i.e. a future date — so it should render read-only per
+// the "disable only future dates" rule (`isCellLocked`).
 const TUESDAY_ENTRY = {
   id: TUESDAY_ENTRY_ID,
   userId: CURRENT_USER_ID,
@@ -103,7 +106,28 @@ const TUESDAY_ENTRY = {
   timesheetPeriodId: PERIOD_ID,
   entryDate: "2025-01-07",
   hours: 4,
-  taskDescription: "Yesterday's-view work",
+  taskDescription: "Tomorrow's-view work",
+  isApproved: false,
+};
+
+// A period that starts well before today's mocked date (2025-01-06), used to
+// exercise a *past* week (reached via the "Previous week" control) where
+// every day is an old date — per the `feature/currency` request, these
+// remain fully editable rather than read-only.
+const PAST_PERIOD_ID = "3fa85f64-5717-4562-b3fc-2c963f66af14";
+const PAST_PERIOD = { ...PERIOD, id: PAST_PERIOD_ID, periodStart: "2024-12-01" };
+
+const PAST_ENTRY_ID = "3fa85f64-5717-4562-b3fc-2c963f66af15";
+const PAST_ENTRY = {
+  id: PAST_ENTRY_ID,
+  userId: CURRENT_USER_ID,
+  projectId: PROJECT_ID,
+  projectCode: "PRJ-ALPHA",
+  projectName: "Project Alpha",
+  timesheetPeriodId: PAST_PERIOD_ID,
+  entryDate: "2025-01-03",
+  hours: 3,
+  taskDescription: "Old work",
   isApproved: false,
 };
 
@@ -195,14 +219,16 @@ describe("MyTimesheetView", () => {
     expect(mondayInput).toHaveValue(6);
   });
 
-  it("shows an info notice that only today's hours can be logged or edited", async () => {
+  it("shows an info notice that today's and past dates' hours can be logged or edited, but not future dates", async () => {
     mockApi({ entries: [MONDAY_ENTRY] });
     renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
 
-    expect(await screen.findByText(/you can only log or edit hours for today/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/you can log or edit hours for today.*and any earlier date/i)
+    ).toBeInTheDocument();
   });
 
-  it("renders a still-pending entry on a non-today date as read-only", async () => {
+  it("renders a still-pending entry on a future date as read-only", async () => {
     mockApi({ entries: [TUESDAY_ENTRY] });
     renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
 
@@ -211,7 +237,65 @@ describe("MyTimesheetView", () => {
     expect(tuesdayInput).toHaveValue(4);
   });
 
-  it("does not create a new entry for a non-today, previously-empty cell on Save All", async () => {
+  // `feature/currency`: "disable only future date[s]; enable [the] present
+  // date and old dates" — a past day's cell (reached via "Previous week")
+  // stays editable, unlike the historical "present day only" behavior.
+  it("keeps a past date's entry editable and lets it be updated on Save All", async () => {
+    mockApi({ periods: [PAST_PERIOD], entries: [PAST_ENTRY] });
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: {} });
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /previous week/i }));
+
+    const fridayInput = await screen.findByLabelText(/Project Alpha hours on Jan 3/i);
+    expect(fridayInput).not.toBeDisabled();
+    expect(fridayInput).toHaveValue(3);
+
+    await user.clear(fridayInput);
+    await user.type(fridayInput, "5");
+    await user.click(screen.getByRole("button", { name: /^save all$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(`/timesheet-entries/${PAST_ENTRY_ID}`, {
+        hours: 5,
+        taskDescription: "Old work",
+      })
+    );
+  });
+
+  // A past day's previously-empty cell is likewise now loggable (not just
+  // editable) — logging time retroactively is exactly what "enable... old
+  // dates" asks for.
+  it("creates a new entry for a past date's previously-empty cell on Save All", async () => {
+    mockApi({ periods: [PAST_PERIOD], entries: [] });
+    (apiClient.post as jest.Mock).mockResolvedValueOnce({ data: { data: { ...PAST_ENTRY, hours: 2 } } });
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    await user.click(await screen.findByRole("button", { name: /previous week/i }));
+
+    const fridayInput = await screen.findByLabelText(/Project Alpha hours on Jan 3/i);
+    expect(fridayInput).not.toBeDisabled();
+    await user.type(fridayInput, "2");
+
+    const notesField = await screen.findByLabelText("Jan 3");
+    await user.type(notesField, "Backfilled work");
+
+    await user.click(screen.getByRole("button", { name: /^save all$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.post).toHaveBeenCalledWith("/timesheet-entries", {
+        projectId: PROJECT_ID,
+        timesheetPeriodId: PAST_PERIOD_ID,
+        entryDate: "2025-01-03",
+        hours: 2,
+        taskDescription: "Backfilled work",
+      })
+    );
+  });
+
+  it("does not create a new entry for a future, previously-empty cell on Save All", async () => {
     mockApi({ entries: [] });
     const user = userEvent.setup();
     renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);

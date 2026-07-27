@@ -126,28 +126,35 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * seeing every active project, since that role isn't itself a project
  * resource assignment concept.
  *
- * Per the `bugs/timesheet-history` feature request ("In My Timesheet can
- * update date just for present day"): only the *current* calendar day
- * (`getTodayDateOnly`) is ever loggable/editable in the weekly grid, in
+ * Per the `feature/currency` follow-up request ("in My Timesheet, disable
+ * only future date[s]; enable [the] present date and old dates"): today's
+ * cell *and* every past day remain loggable/editable in the weekly grid, in
  * addition to the existing locked-period/out-of-range checks below — see
- * `isCellLocked`. Past days become read-only once the day has passed (their
- * previously-saved hours still render, just disabled) and future days cannot
- * be logged in advance. This applies uniformly to create, update, and delete
- * (clearing hours), since all three share the same per-cell lock gate and
- * `handleSaveAll` skips locked cells outright.
+ * `isCellLocked`. Only days *after* today (`getTodayDateOnly`) are locked, so
+ * users cannot log time in advance. This applies uniformly to create,
+ * update, and delete (clearing hours), since all three share the same
+ * per-cell lock gate and `handleSaveAll` skips locked cells outright.
+ *
+ * (Superseded rule, kept for history: the earlier `bugs/timesheet-history`
+ * request — "In My Timesheet can update date just for present day" — had
+ * restricted editing to *only* the current calendar day, freezing every past
+ * day once it had passed. That "present day only" restriction has been
+ * relaxed by the `feature/currency` request above to also allow editing past
+ * dates; future dates are still blocked exactly as before.)
  *
  * Per the `bugs/exchange-rate` feature request ("TS can be submitted only
  * once a day by Employee and if he updates it again then re-approval
- * required from PA"): today's cell remains editable even once its entry has
- * been approved — `isCellLocked` no longer treats `isApproved` as an
- * automatic lock. Saving a change to an already-approved entry calls the same
+ * required from PA"): today's cell (and, per the `feature/currency` relaxation
+ * above, any past day's cell) remains editable even once its entry has been
+ * approved — `isCellLocked` no longer treats `isApproved` as an automatic
+ * lock. Saving a change to an already-approved entry calls the same
  * `useUpdateTimesheetEntry` mutation as any other edit; the backend's
  * `TimesheetEntry/UpdateTimesheetEntry` contract documents that this flips
  * the entry back to pending ("Re-approval required" — see
  * `docs/HR_System_BE.postman_collection.json`), so the very next refetch
- * shows it as pending again, exactly matching the requested workflow. Only
- * *today's* approved entries get this treatment; once a day has passed,
- * `isCellLocked`'s existing "only today" rule freezes it regardless of
+ * shows it as pending again, exactly matching the requested workflow. Once a
+ * period is locked (or a date rolls into the future relative to "today"),
+ * `isCellLocked`'s date-range/lock/future-date rules freeze it regardless of
  * approval state, which is the "submitted once a day" half of the request.
  *
  * Per the same feature request ("when change the hour then open for
@@ -359,16 +366,19 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   /**
    * Whether a given project/day cell is read-only. Approval status
    * (`baseline?.isApproved`) is deliberately *not* checked here — per the
-   * component doc comment's "re-approval required" section, today's cell
-   * stays editable even once approved; only the period-lock, date-range, and
-   * "only today" rules below actually freeze a cell.
+   * component doc comment's "re-approval required" section, today's cell (and
+   * any past day's cell) stays editable even once approved; only the
+   * period-lock, date-range, and future-date rules below actually freeze a
+   * cell.
    */
   function isCellLocked(date: string, _baseline: TimesheetEntry | undefined): boolean {
     if (!selectedPeriod) return true;
     if (selectedPeriod.isLocked) return true;
     if (!isDateOnlyInRange(date, selectedPeriod.periodStart, selectedPeriod.periodEnd)) return true;
-    // Only today's date is loggable/editable — see the component doc comment.
-    return date !== getTodayDateOnly();
+    // Today and every past date are loggable/editable; only dates after today
+    // are locked, so hours cannot be logged in advance — see the component
+    // doc comment.
+    return compareDateOnly(date, getTodayDateOnly()) > 0;
   }
 
   async function handleSaveAll() {
@@ -551,8 +561,9 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       )}
       {selectedPeriod && !selectedPeriod.isLocked && (
         <Alert variant="info">
-          You can only log or edit hours for today, {formatShortDate(getTodayDateOnly())}. Other days are read-only.
-          Editing an already-approved entry for today will require re-approval from your project admin.
+          You can log or edit hours for today, {formatShortDate(getTodayDateOnly())}, and any earlier date. Future
+          dates are read-only until they arrive. Editing an already-approved entry will require re-approval from
+          your project admin.
         </Alert>
       )}
 
