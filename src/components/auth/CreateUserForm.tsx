@@ -24,6 +24,7 @@ export function CreateUserForm() {
     isLoading: isCountriesLoading,
     isError: isCountriesError,
     error: countriesError,
+    refetch: refetchCountries,
   } = useCountryList();
 
   const {
@@ -75,7 +76,16 @@ export function CreateUserForm() {
         <Alert variant="error">{getApiErrorMessage(rolesError, "Unable to load roles.")}</Alert>
       )}
       {isCountriesError && (
-        <Alert variant="error">{getApiErrorMessage(countriesError, "Unable to load countries.")}</Alert>
+        <Alert variant="error">
+          {getApiErrorMessage(countriesError, "Unable to load countries.")}{" "}
+          <button
+            type="button"
+            onClick={() => refetchCountries()}
+            className="font-semibold underline underline-offset-2 hover:no-underline"
+          >
+            Try again
+          </button>
+        </Alert>
       )}
 
       <div className="grid gap-5 sm:grid-cols-2">

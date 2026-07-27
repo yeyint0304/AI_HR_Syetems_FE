@@ -47,7 +47,7 @@ const sampleUser: AuthUser = {
   id: "1",
   email: "jane@example.com",
   username: "jane",
-  role: USER_ROLES.USER,
+  role: USER_ROLES.EMPLOYEE,
 };
 
 function withQueryClient() {

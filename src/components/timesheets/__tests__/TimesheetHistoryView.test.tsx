@@ -337,6 +337,26 @@ describe("TimesheetHistoryView", () => {
     expect(screen.getByText("01 Feb 2025")).toBeInTheDocument();
   });
 
+  // Regression: the "Project" filter's "All Projects" entry used to be
+  // rendered as a `disabled` placeholder `<option>`, so once a user picked a
+  // specific project there was no way to select "All Projects" again.
+  it("allows re-selecting 'All Projects' after filtering by a specific project", async () => {
+    mockApi({ entries: [PENDING_ENTRY] });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByRole("table");
+    const projectSelect = screen.getByLabelText(/^project$/i);
+
+    await user.selectOptions(projectSelect, PROJECT_ID);
+    expect(screen.getByRole("option", { name: /all projects/i })).not.toBeDisabled();
+
+    await user.selectOptions(projectSelect, "All Projects");
+    await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+    expect(projectSelect).toHaveValue("");
+  });
+
   it("shows an empty state when no entries match the applied filters", async () => {
     mockApi({ entries: [PENDING_ENTRY] }); // entryDate: 2025-01-06
     const user = userEvent.setup();
