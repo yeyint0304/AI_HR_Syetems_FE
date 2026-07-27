@@ -5,8 +5,10 @@ import { ChevronLeft, ChevronRight, Info, Lock } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useCreateTimesheetEntry,
@@ -169,6 +171,16 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * click, prevents a "Save All" round trip failing only to discover a
  * description was required all along. The manual info-icon toggle
  * (`onToggleExpand`) still works as before for reviewing/collapsing notes.
+ *
+ * Per the `bugs/paginations` request ("add pagination UI to all tables where
+ * pagination is currently missing... My Timesheet"): the weekly grid's rows
+ * (one per loggable project) are paginated client-side via
+ * `useTablePagination` + `TablePagination`, the same convention every other
+ * reference-data table in this app uses (`components/ui/TablePagination.tsx`
+ * doc comment). The daily/weekly total row, however, is still computed from
+ * every loggable project (`dailyTotals` below), not just the visible page —
+ * otherwise "Daily total"/"Total" would silently under-report once a user is
+ * assigned to more projects than fit on one page.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const { user } = useAuth();
@@ -241,6 +253,17 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     if (!assignedProjectIds) return [];
     return activeProjects.filter((project) => assignedProjectIds.has(project.id));
   }, [isScopedToAssignedProjects, activeProjects, assignedProjectIds]);
+
+  // Paginates the weekly grid's project rows (see the component doc comment's
+  // `bugs/paginations` note) — `pagedLoggableProjects` is what's actually
+  // rendered as `<tr>`s by `TimesheetGrid`, while totals below are still
+  // computed from the full `loggableProjects` list.
+  const {
+    page: projectsPage,
+    setPage: setProjectsPage,
+    totalPages: projectsTotalPages,
+    pageItems: pagedLoggableProjects,
+  } = useTablePagination(loggableProjects);
 
   // Pick a default period/week once periods have loaded (once per data load; the
   // user may then freely change either via the controls below). This adjusts
@@ -324,6 +347,21 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
     setSaveError(null);
     setSaveSuccess(null);
   }
+
+  // Daily/weekly totals, computed from every loggable project regardless of
+  // which page of rows is currently visible — see the component doc
+  // comment's `bugs/paginations` note.
+  const dailyTotals = useMemo(
+    () =>
+      weekDates.map((date) =>
+        loggableProjects.reduce((sum, project) => {
+          const draft = drafts[cellKey(project.id, date)];
+          const hours = draft ? Number(draft.hours) : NaN;
+          return sum + (Number.isFinite(hours) ? hours : 0);
+        }, 0)
+      ),
+    [weekDates, loggableProjects, drafts]
+  );
 
   const createMutation = useCreateTimesheetEntry();
   const updateMutation = useUpdateTimesheetEntry();
@@ -613,21 +651,30 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       ) : isEntriesError ? (
         <Alert variant="error">{getApiErrorMessage(entriesError, "Unable to load your timesheet entries.")}</Alert>
       ) : selectedPeriod && weekDates.length === 7 ? (
-        <TimesheetGrid
-          period={selectedPeriod}
-          projects={loggableProjects}
-          weekDates={weekDates}
-          drafts={drafts}
-          baselineByKey={baselineByKey}
-          fieldErrors={fieldErrors}
-          expandedProjectId={expandedProjectId}
-          onToggleExpand={(projectId) =>
-            setExpandedProjectId((current) => (current === projectId ? null : projectId))
-          }
-          onExpandProject={expandProjectNotes}
-          onCellChange={updateDraft}
-          isCellLocked={isCellLocked}
-        />
+        <>
+          <TimesheetGrid
+            period={selectedPeriod}
+            projects={pagedLoggableProjects}
+            dailyTotals={dailyTotals}
+            weekDates={weekDates}
+            drafts={drafts}
+            baselineByKey={baselineByKey}
+            fieldErrors={fieldErrors}
+            expandedProjectId={expandedProjectId}
+            onToggleExpand={(projectId) =>
+              setExpandedProjectId((current) => (current === projectId ? null : projectId))
+            }
+            onExpandProject={expandProjectNotes}
+            onCellChange={updateDraft}
+            isCellLocked={isCellLocked}
+          />
+          <TablePagination
+            page={projectsPage}
+            totalPages={projectsTotalPages}
+            onPageChange={setProjectsPage}
+            label="My Timesheets projects pagination"
+          />
+        </>
       ) : null}
     </div>
   );
@@ -635,7 +682,10 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
 
 interface TimesheetGridProps {
   period: TimesheetPeriod;
+  /** The current page of loggable projects to render as rows — see `MyTimesheetView`'s `pagedLoggableProjects`. */
   projects: { id: string; code: string; name: string; clientName: string }[];
+  /** Per-day totals across *every* loggable project (not just the visible page) — see `MyTimesheetView`'s `dailyTotals`. */
+  dailyTotals: number[];
   weekDates: string[];
   drafts: Record<string, DraftCell>;
   baselineByKey: Map<string, TimesheetEntry>;
@@ -651,6 +701,7 @@ interface TimesheetGridProps {
 function TimesheetGrid({
   period,
   projects,
+  dailyTotals,
   weekDates,
   drafts,
   baselineByKey,
@@ -661,14 +712,6 @@ function TimesheetGrid({
   onCellChange,
   isCellLocked,
 }: TimesheetGridProps) {
-  const dailyTotals = weekDates.map((date) =>
-    projects.reduce((sum, project) => {
-      const draft = drafts[cellKey(project.id, date)];
-      const hours = draft ? Number(draft.hours) : NaN;
-      return sum + (Number.isFinite(hours) ? hours : 0);
-    }, 0)
-  );
-
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
