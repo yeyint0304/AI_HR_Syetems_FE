@@ -10,6 +10,7 @@ import {
   useRoles,
   useUnassignedUsersInfinite,
   useUpdateProfile,
+  useUpdateUser,
 } from "@/hooks/useAuth";
 import { useAuthStore } from "@/stores/auth.store";
 import {
@@ -20,6 +21,7 @@ import {
   loginRequest,
   logoutRequest,
   updateProfileRequest,
+  updateUserRequest,
 } from "@/lib/api/auth.api";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
 import type { AuthUser } from "@/types/auth.types";
@@ -32,6 +34,7 @@ jest.mock("@/lib/api/auth.api", () => ({
   createUserRequest: jest.fn(),
   getRolesRequest: jest.fn(),
   getUnassignedUsersRequest: jest.fn(),
+  updateUserRequest: jest.fn(),
 }));
 
 const mockReplace = jest.fn();
@@ -186,6 +189,44 @@ describe("useCreateUser", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ id: "42" });
+  });
+});
+
+describe("useUpdateUser", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resolves with the updated user", async () => {
+    const updatedUser = {
+      id: "u1",
+      username: "testeredited",
+      email: "tester@d3-sg.com",
+      firstName: "Tester1",
+      lastName: "Sample",
+      roleName: "ProjectAdmin",
+      isActive: true,
+    };
+    (updateUserRequest as jest.Mock).mockResolvedValueOnce(updatedUser);
+    const { result } = renderHook(() => useUpdateUser("u1"), { wrapper: withQueryClient() });
+
+    result.current.mutate({
+      username: "testeredited",
+      email: "tester@d3-sg.com",
+      firstName: "Tester1",
+      lastName: "Sample",
+      isActive: true,
+      roleId: null,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(updatedUser);
+    expect(updateUserRequest).toHaveBeenCalledWith("u1", {
+      username: "testeredited",
+      email: "tester@d3-sg.com",
+      firstName: "Tester1",
+      lastName: "Sample",
+      isActive: true,
+      roleId: null,
+    });
   });
 });
 

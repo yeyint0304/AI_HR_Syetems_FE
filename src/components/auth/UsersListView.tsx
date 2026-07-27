@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
+import { Modal } from "@/components/ui/Modal";
+import { EditUserForm } from "@/components/auth/EditUserForm";
 import { useUserList } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useTablePagination } from "@/hooks/useTablePagination";
@@ -51,10 +54,19 @@ function summarizeByRole(users: UserListItem[]): { roleName: string; count: numb
  * already-implemented route (`app/(dashboard)/admin/users/new/page.tsx`),
  * and keeping it as its own destination avoids duplicating the (fairly
  * large) Create User form inside this list screen.
+ *
+ * Per-row "Edit", by contrast, *does* open a pre-filled `Modal`
+ * (`components/auth/EditUserForm.tsx`) rather than navigating to a page —
+ * matching the Currencies/Countries/Rate Cards Administration screens'
+ * "Edit -> pre-filled modal" pattern, and necessary here since the backend
+ * exposes no "get user by id" endpoint to hydrate a standalone edit page
+ * with (only `Auth/GetUserList`/`Auth/SearchUsers`); the modal reuses the
+ * row data this list has already fetched instead.
  */
 export function UsersListView() {
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const [userBeingEdited, setUserBeingEdited] = useState<UserListItem | null>(null);
 
   const {
     data: userPage,
@@ -154,6 +166,9 @@ export function UsersListView() {
                   <th scope="col" className="px-4 py-3">
                     Status
                   </th>
+                  <th scope="col" className="px-4 py-3 text-right">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -187,6 +202,18 @@ export function UsersListView() {
                           {user.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setUserBeingEdited(user)}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                          >
+                            <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -197,6 +224,21 @@ export function UsersListView() {
       )}
 
       <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} label="Users pagination" />
+
+      <Modal
+        open={userBeingEdited !== null}
+        title="Edit user"
+        description="Update this user's profile, role, or account status."
+        onClose={() => setUserBeingEdited(null)}
+      >
+        {userBeingEdited && (
+          <EditUserForm
+            user={userBeingEdited}
+            onSuccess={() => setUserBeingEdited(null)}
+            onCancel={() => setUserBeingEdited(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

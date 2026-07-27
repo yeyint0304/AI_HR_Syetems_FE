@@ -5,7 +5,7 @@ import { UsersListView } from "@/components/auth/UsersListView";
 import { apiClient } from "@/lib/api/axiosInstance";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
-  apiClient: { get: jest.fn() },
+  apiClient: { get: jest.fn(), put: jest.fn() },
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -48,6 +48,12 @@ function mockUsersResponse(items: unknown[] = USERS, totalCount = items.length) 
       return Promise.resolve({
         data: { data: { items, page: 1, pageSize: 100, totalCount, hasMore: false } },
       });
+    }
+    if (url === "/auth/roles") {
+      return Promise.resolve({ data: { data: [{ id: "role-1", name: "ProjectAdmin" }] } });
+    }
+    if (url === "/countries") {
+      return Promise.resolve({ data: { data: [] } });
     }
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -129,5 +135,67 @@ describe("UsersListView", () => {
         expect.objectContaining({ params: expect.objectContaining({ search: "tester" }) })
       )
     );
+  });
+
+  it("paginates the table client-side once there are more users than fit on one page", async () => {
+    const manyUsers = Array.from({ length: 25 }, (_, index) => ({
+      ...USERS[0],
+      id: `u${index}`,
+      username: `user${index}`,
+      email: `user${index}@hrsystem.com`,
+    }));
+    mockUsersResponse(manyUsers, manyUsers.length);
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByText(/@user/).length).toBeLessThan(manyUsers.length);
+    const pagination = screen.getByLabelText(/users pagination/i);
+    expect(pagination).toHaveTextContent("Page 1 of 2");
+  });
+
+  it("opens a pre-filled Edit modal for the selected row and submits the update", async () => {
+    // `countryId` must be a well-formed GUID here (unlike the shorthand "c1"
+    // used by the other fixtures in this file) — `EditUserForm` pre-fills it
+    // straight into `updateUserSchema`'s `countryId` field, which enforces
+    // the same GUID format `guidSchema` requires everywhere else in the app.
+    mockUsersResponse([
+      { ...USERS[0], countryId: "22222222-2222-2222-2222-222222222201" },
+      { ...USERS[1], countryId: "22222222-2222-2222-2222-222222222201" },
+    ]);
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: {
+          id: "u2",
+          username: "testeredited",
+          email: "tester@d3-sg.com",
+          firstName: "Tester1",
+          lastName: "Sample",
+          roleName: "ProjectAdmin",
+          isActive: true,
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    expect(row).not.toBeNull();
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /edit/i }));
+
+    const usernameInput = await screen.findByLabelText(/^username$/i);
+    expect(usernameInput).toHaveValue("tester");
+
+    await user.clear(usernameInput);
+    await user.type(usernameInput, "testeredited");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(
+        "/auth/users/u2",
+        expect.objectContaining({ username: "testeredited" })
+      )
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

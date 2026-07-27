@@ -9,6 +9,8 @@ import type {
   UnassignedUserListParams,
   UnassignedUserPage,
   UpdateProfileRequest,
+  UpdateUserRequest,
+  UserListItem,
   UserListPage,
   UserListQueryParams,
 } from "@/types/auth.types";
@@ -81,5 +83,20 @@ export async function getUnassignedUsersRequest(
  */
 export async function getUserListRequest(params: UserListQueryParams = {}): Promise<UserListPage> {
   const { data } = await apiClient.get<{ data: UserListPage }>("/auth/users", { params });
+  return data.data;
+}
+
+/**
+ * Updates an existing user, backing the "Edit" action on the `/admin/users`
+ * "User Management" table (`components/auth/EditUserForm.tsx`). Proxies
+ * through this app's own `/api/auth/users/[id]` Route Handler, which in turn
+ * calls the backend's `Auth/UpdateUser/{id}` endpoint (see
+ * `app/api/auth/users/[id]/route.ts`).
+ */
+export async function updateUserRequest(
+  id: string,
+  payload: UpdateUserRequest
+): Promise<UserListItem> {
+  const { data } = await apiClient.put<{ data: UserListItem }>(`/auth/users/${id}`, payload);
   return data.data;
 }

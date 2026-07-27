@@ -3,6 +3,7 @@ import {
   changePasswordSchema,
   updateProfileSchema,
   createUserSchema,
+  updateUserSchema,
   unassignedUserQuerySchema,
 } from "@/lib/validators/auth.validators";
 
@@ -126,6 +127,53 @@ describe("createUserSchema", () => {
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.message === "Select a role.")).toBe(true);
     }
+  });
+});
+
+describe("updateUserSchema", () => {
+  const base = {
+    username: "tester",
+    email: "tester@example.com",
+    firstName: "Tester",
+    lastName: "Sample",
+    employeeId: "",
+    countryId: "",
+    isActive: true,
+    roleId: "",
+  };
+
+  it("accepts a valid update payload with an empty (unchanged) role", () => {
+    expect(updateUserSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("accepts a seeded backend Role id (e.g. SystemAdmin) as roleId, same as createUserSchema", () => {
+    const result = updateUserSchema.safeParse({
+      ...base,
+      roleId: "11111111-1111-1111-1111-111111111101",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a username shorter than 3 characters", () => {
+    const result = updateUserSchema.safeParse({ ...base, username: "ab" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an invalid email", () => {
+    const result = updateUserSchema.safeParse({ ...base, email: "not-an-email" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a missing isActive flag", () => {
+    const withoutIsActive: Record<string, unknown> = { ...base };
+    delete withoutIsActive.isActive;
+    const result = updateUserSchema.safeParse(withoutIsActive);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a malformed (non-GUID) roleId", () => {
+    const result = updateUserSchema.safeParse({ ...base, roleId: "not-a-guid" });
+    expect(result.success).toBe(false);
   });
 });
 

@@ -4,6 +4,7 @@ import type {
   CreateUserRequest,
   LoginRequest,
   UpdateProfileRequest,
+  UpdateUserRequest,
 } from "@/types/auth.types";
 import type {
   AssignResourceRequest,
@@ -81,6 +82,26 @@ export function toBackendCreateUserPayload(payload: CreateUserRequest) {
     EmployeeId: payload.employeeId || null,
     CountryId: payload.countryId || null,
     RoleId: payload.roleId,
+  };
+}
+
+/**
+ * Matches `Auth/UpdateUser`, which — unlike `Auth/CreateUser` — accepts no
+ * `Password` field and additionally accepts `IsActive`. `RoleId` defaults to
+ * `null` when omitted, which the backend's saved example
+ * (`docs/HR_System_BE.postman_collection.json`) treats as "keep the user's
+ * current role" rather than clearing it.
+ */
+export function toBackendUpdateUserPayload(payload: UpdateUserRequest) {
+  return {
+    Username: payload.username,
+    Email: payload.email,
+    FirstName: payload.firstName,
+    LastName: payload.lastName,
+    EmployeeId: payload.employeeId || null,
+    CountryId: payload.countryId || null,
+    IsActive: payload.isActive,
+    RoleId: payload.roleId || null,
   };
 }
 

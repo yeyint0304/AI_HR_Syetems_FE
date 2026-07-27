@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   changePasswordRequest,
@@ -11,6 +11,7 @@ import {
   loginRequest,
   logoutRequest,
   updateProfileRequest,
+  updateUserRequest,
 } from "@/lib/api/auth.api";
 import { useAuthStore } from "@/stores/auth.store";
 import { USER_ROLES, UNASSIGNED_USERS_PAGE_SIZE } from "@/lib/constants/auth.constants";
@@ -20,6 +21,7 @@ import type {
   LoginRequest,
   UnassignedUserPage,
   UpdateProfileRequest,
+  UpdateUserRequest,
   UserListQueryParams,
 } from "@/types/auth.types";
 
@@ -178,5 +180,22 @@ export function useUserList(params: UserListQueryParams = {}) {
   return useQuery({
     queryKey: [...USER_LIST_QUERY_KEY, params] as const,
     queryFn: () => getUserListRequest(params),
+  });
+}
+
+/**
+ * Updates an existing user (the `/admin/users` "Edit" action,
+ * `components/auth/EditUserForm.tsx`). Invalidates every cached
+ * `useUserList` page/search variant on success so the list reflects the
+ * change immediately, matching `useUpdateCountry`/`useUpdateCurrency`'s
+ * invalidation pattern.
+ */
+export function useUpdateUser(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateUserRequest) => updateUserRequest(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: USER_LIST_QUERY_KEY });
+    },
   });
 }
