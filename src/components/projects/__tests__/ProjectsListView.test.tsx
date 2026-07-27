@@ -95,6 +95,29 @@ describe("ProjectsListView", () => {
     expect(screen.queryByText("PRJ-BETA")).not.toBeInTheDocument();
   });
 
+  it("paginates the table client-side when there are more projects than fit on one page", async () => {
+    const manyProjects = Array.from({ length: 25 }, (_, index) => ({
+      ...PROJECT_ALPHA,
+      id: `project-${index}`,
+      code: `PRJ-${String(index).padStart(3, "0")}`,
+      name: `Project ${index}`,
+    }));
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: manyProjects } });
+    const user = userEvent.setup();
+    renderWithClient(<ProjectsListView />);
+
+    await screen.findByText("PRJ-000");
+    expect(screen.queryByText("PRJ-020")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /projects pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("PRJ-020")).toBeInTheDocument();
+    expect(screen.queryByText("PRJ-000")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("hides the Actions column and New Project link for a non-manager role", async () => {
     useAuthStore.setState({ user: { id: "1", email: "user@hrsystem.com", role: "User" } });
     (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: [PROJECT_ALPHA] } });

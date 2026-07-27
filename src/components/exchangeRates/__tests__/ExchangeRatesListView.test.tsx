@@ -211,6 +211,32 @@ describe("ExchangeRatesListView", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 
+  it("paginates the rates table client-side when there are more exchange rates than fit on one page", async () => {
+    const manyRates = Array.from({ length: 25 }, (_, index) => ({
+      id: `rate-${index}`,
+      fromCurrency: { id: SGD_ID, code: "SGD", symbol: "S$" },
+      toCurrency: { id: USD_ID, code: "USD", symbol: "$" },
+      rate: 100 + index,
+      effectiveDate: "2025-01-01",
+      isActive: true,
+    }));
+    mockApiGet({ exchangeRates: manyRates });
+    const user = userEvent.setup();
+    renderWithClient(<ExchangeRatesListView />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(/1 SGD = 100 USD/)).toBeInTheDocument();
+    expect(within(table).queryByText(/1 SGD = 120 USD/)).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /exchange rates pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(within(table).getByText(/1 SGD = 120 USD/)).toBeInTheDocument();
+    expect(within(table).queryByText(/1 SGD = 100 USD/)).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("does not offer an Add Rate action when there are no other currencies to rate against", async () => {
     mockApiGet({ currencies: [SGD] });
     renderWithClient(<ExchangeRatesListView />);

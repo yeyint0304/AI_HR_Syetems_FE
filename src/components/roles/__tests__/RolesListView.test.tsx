@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RolesListView } from "@/components/roles/RolesListView";
 import { apiClient } from "@/lib/api/axiosInstance";
@@ -82,5 +83,27 @@ describe("RolesListView", () => {
     renderWithClient(<RolesListView />);
 
     expect(await screen.findByText(/no roles found/i)).toBeInTheDocument();
+  });
+
+  it("paginates the table client-side when there are more roles than fit on one page", async () => {
+    const manyRoles = Array.from({ length: 25 }, (_, index) => ({
+      id: `role-${index}`,
+      name: `Role ${index}`,
+      description: null,
+    }));
+    mockApiGet(manyRoles);
+    const user = userEvent.setup();
+    renderWithClient(<RolesListView />);
+
+    await screen.findByText("Role 0");
+    expect(screen.queryByText("Role 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /roles pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("Role 20")).toBeInTheDocument();
+    expect(screen.queryByText("Role 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UserRolesSummaryView } from "@/components/reports/UserRolesSummaryView";
@@ -147,6 +147,37 @@ describe("UserRolesSummaryView", () => {
     await screen.findByRole("table");
 
     expect(screen.getByText("0.0h")).toBeInTheDocument();
+  });
+
+  it("paginates the summary table client-side when there are more roles than fit on one page", async () => {
+    mockApi({
+      summary: {
+        startDate: "2026-07-01",
+        endDate: "2026-07-20",
+        grandTotalHours: 1000,
+        summary: Array.from({ length: 25 }, (_, index) => ({
+          resourceRoleType: { id: `role-${index}`, name: `Role ${index}` },
+          totalHours: 10,
+          userCount: 1,
+        })),
+      },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UserRolesSummaryView />);
+
+    await user.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Role 0")).toBeInTheDocument();
+    expect(within(table).queryByText("Role 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /user roles summary pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(within(table).getByText("Role 20")).toBeInTheDocument();
+    expect(within(table).queryByText("Role 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
   });
 
   it("shows Export links only once a summary has been applied", async () => {

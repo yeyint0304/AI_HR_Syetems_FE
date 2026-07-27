@@ -74,6 +74,28 @@ describe("ResourceRoleTypesListView", () => {
     expect(await screen.findByText(/no resource role types yet/i)).toBeInTheDocument();
   });
 
+  it("paginates the table client-side when there are more resource role types than fit on one page", async () => {
+    const manyRoleTypes = Array.from({ length: 25 }, (_, index) => ({
+      id: `role-type-${index}`,
+      name: `Role Type ${index}`,
+      description: null,
+    }));
+    mockApiGet(manyRoleTypes);
+    const user = userEvent.setup();
+    renderWithClient(<ResourceRoleTypesListView />);
+
+    await screen.findByText("Role Type 0");
+    expect(screen.queryByText("Role Type 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /resource role types pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("Role Type 20")).toBeInTheDocument();
+    expect(screen.queryByText("Role Type 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("creates a new resource role type via the Add Resource Role modal", async () => {
     mockApiGet();
     (apiClient.post as jest.Mock).mockResolvedValueOnce({ data: { data: { id: "new-id" } } });
