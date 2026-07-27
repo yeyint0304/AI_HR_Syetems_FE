@@ -11,11 +11,24 @@ export interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement
   hint?: string;
   options: SelectOption[];
   placeholder?: string;
+  /**
+   * Whether the `placeholder` option is rendered as `disabled` (the default,
+   * `true`). Required-selection fields (e.g. "Role") should keep the default
+   * so the placeholder can only ever be the *initial* value, never one the
+   * user can deliberately re-select.
+   *
+   * Filter selects whose empty value is itself a meaningful, permanent
+   * choice (e.g. "All Projects"/"All Statuses") should pass `false` here —
+   * otherwise, once the user picks a specific option, the native `<select>`
+   * makes the disabled placeholder option unreachable again, permanently
+   * trapping them away from "All ..." for the lifetime of the component.
+   */
+  placeholderDisabled?: boolean;
 }
 
 /** Accessible `<select>` field, styled to match `TextField`. */
 export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(function SelectField(
-  { label, error, hint, id, className = "", options, placeholder, ...props },
+  { label, error, hint, id, className = "", options, placeholder, placeholderDisabled = true, ...props },
   ref
 ) {
   const generatedId = useId();
@@ -39,7 +52,7 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(funct
         {...props}
       >
         {placeholder && (
-          <option value="" disabled>
+          <option value="" disabled={placeholderDisabled}>
             {placeholder}
           </option>
         )}
