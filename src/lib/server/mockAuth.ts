@@ -61,7 +61,7 @@ const MOCK_USERS: readonly MockUser[] = [
     username: "jane",
     firstName: "Jane",
     lastName: "Doe",
-    role: USER_ROLES.USER,
+    role: USER_ROLES.EMPLOYEE,
     countryId: null,
   },
 ] as const;

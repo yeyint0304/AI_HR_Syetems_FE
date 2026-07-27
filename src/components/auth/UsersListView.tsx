@@ -16,12 +16,11 @@ import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
 import type { UserListItem } from "@/types/auth.types";
 
-/** Role badge colors, matching the wireframe's "System Admin=yellow, Project Admin=green, Assigned User=grey" convention (`docs/HR_System_FE_wireframe.pdf`, `/admin/users`). */
+/** Role badge colors, matching the wireframe's "System Admin=yellow, Project Admin=green, Employee=grey" convention (`docs/HR_System_FE_wireframe.pdf`, `/admin/users`) — same convention as `components/roles/RolesListView.tsx`. */
 const ROLE_BADGE_CLASSES: Record<string, string> = {
   [USER_ROLES.SYSTEM_ADMIN]: "bg-amber-50 text-amber-700",
   [USER_ROLES.PROJECT_ADMIN]: "bg-green-50 text-green-700",
-  [USER_ROLES.USER]: "bg-slate-100 text-slate-600",
-  [USER_ROLES.GUEST]: "bg-slate-100 text-slate-600",
+  [USER_ROLES.EMPLOYEE]: "bg-slate-100 text-slate-600",
 };
 
 function roleBadgeClass(roleName: string): string {

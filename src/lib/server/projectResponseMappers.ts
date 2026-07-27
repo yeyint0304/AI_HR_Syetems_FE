@@ -17,10 +17,23 @@ import { readBackendEnvelope } from "@/lib/server/backendEnvelope";
  * always returned `null` for real backend responses (the actual fields being
  * one level deeper, under `Data`) — this made `GET /api/projects/[id]`
  * respond as if the project didn't exist / fail upstream. They now unwrap
- * that envelope via `readBackendEnvelope` first. List responses were
- * already unaffected: `extractArray` below already checks for an array under
- * `Data`/`data`. Both PascalCase and camelCase field names are still checked
- * defensively for forward-compatibility.
+ * that envelope via `readBackendEnvelope` first. Both PascalCase and
+ * camelCase field names are still checked defensively for
+ * forward-compatibility.
+ *
+ * `mapBackendProjectList`/`mapBackendAssignmentList` also unwrap the envelope
+ * before calling `extractArray`, mirroring the fix already applied to
+ * `lib/server/currencyResponseMappers.ts#mapBackendCurrencyList` and
+ * `lib/server/authResponseMappers.ts#mapBackendUnassignedUserList`: if
+ * `Project/GetProjectList` ever returns its `Data` in the same paginated
+ * shape those endpoints do (`Data: { Items: [...], TotalCount, ... }` rather
+ * than a bare array — undocumented either way, since the saved Postman
+ * example for this endpoint has no response body), `extractArray(raw)` alone
+ * can't see the nested array (`raw.Data` would be an object, not an array),
+ * so the "Projects" list — and everywhere else `useProjectList` feeds, e.g.
+ * the "Add User to Project" screen's page header and the Timesheet History
+ * "Project" filter — would silently render empty. Unwrapping first still
+ * tolerates a bare-array `Data` exactly as before.
  */
 
 function extractArray(raw: unknown): unknown[] {
@@ -86,7 +99,8 @@ export function mapBackendProject(raw: unknown): Project | null {
 }
 
 export function mapBackendProjectList(raw: unknown): Project[] {
-  return extractArray(raw)
+  const envelope = readBackendEnvelope(raw);
+  return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendProject)
     .filter((project): project is Project => project !== null);
 }
@@ -102,6 +116,10 @@ interface RawAssignment {
   userName?: string;
   FullName?: string;
   fullName?: string;
+  FirstName?: string;
+  firstName?: string;
+  LastName?: string;
+  lastName?: string;
   UserEmail?: string;
   userEmail?: string;
   Email?: string;
@@ -114,7 +132,19 @@ interface RawAssignment {
   roleName?: string;
 }
 
-/** Maps a single backend resource-assignment object (tolerates being passed either the raw envelope or an already-unwrapped object). Returns `null` if the minimum required fields are missing. */
+/**
+ * Maps a single backend resource-assignment object (tolerates being passed
+ * either the raw envelope or an already-unwrapped object). Returns `null` if
+ * the minimum required fields are missing.
+ *
+ * Per the saved "200 - Success" example for `Project/GetProjectAssignments`
+ * in `docs/HR_System_BE.postman_collection.json`, each item carries the
+ * assignee's name as separate `FirstName`/`LastName` fields, not a combined
+ * `UserName`/`FullName` field — neither of which the live payload actually
+ * includes. Without this, `userName` always fell through to `undefined` and
+ * `ProjectAssignmentsView`'s "Assigned Users" list rendered the raw
+ * `userId` GUID in place of every assignee's name.
+ */
 export function mapBackendAssignment(raw: unknown): ProjectAssignment | null {
   const envelope = readBackendEnvelope(raw);
   if (!envelope.isSuccess) return null;
@@ -126,10 +156,12 @@ export function mapBackendAssignment(raw: unknown): ProjectAssignment | null {
   const resourceRoleTypeId = r.ResourceRoleTypeId ?? r.resourceRoleTypeId;
   if (!id || !userId || !resourceRoleTypeId) return null;
 
+  const fullName = `${r.FirstName ?? r.firstName ?? ""} ${r.LastName ?? r.lastName ?? ""}`.trim();
+
   return {
     id,
     userId,
-    userName: r.UserName ?? r.userName ?? r.FullName ?? r.fullName,
+    userName: r.UserName ?? r.userName ?? r.FullName ?? r.fullName ?? (fullName || undefined),
     userEmail: r.UserEmail ?? r.userEmail ?? r.Email ?? r.email,
     resourceRoleTypeId,
     resourceRoleTypeName: r.ResourceRoleTypeName ?? r.resourceRoleTypeName ?? r.RoleName ?? r.roleName,
@@ -137,7 +169,8 @@ export function mapBackendAssignment(raw: unknown): ProjectAssignment | null {
 }
 
 export function mapBackendAssignmentList(raw: unknown): ProjectAssignment[] {
-  return extractArray(raw)
+  const envelope = readBackendEnvelope(raw);
+  return extractArray(envelope.isSuccess ? envelope.data : raw)
     .map(mapBackendAssignment)
     .filter((assignment): assignment is ProjectAssignment => assignment !== null);
 }

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TimesheetPeriodsListView } from "@/components/timesheetPeriods/TimesheetPeriodsListView";
 import { apiClient } from "@/lib/api/axiosInstance";
 import { useAuthStore } from "@/stores/auth.store";
+import { formatDisplayDate } from "@/lib/utils/date";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -160,6 +161,34 @@ describe("TimesheetPeriodsListView", () => {
     await waitFor(() =>
       expect(apiClient.delete).toHaveBeenCalledWith(`/timesheet-periods/${UNLOCKED_PERIOD.id}`)
     );
+  });
+
+  it("paginates the table client-side when there are more periods than fit on one page", async () => {
+    const manyPeriods = Array.from({ length: 25 }, (_, index) => ({
+      id: `period-${index}`,
+      periodStart: `2025-01-${String(index + 1).padStart(2, "0")}`,
+      periodEnd: "2099-12-31",
+      isLocked: false,
+      lockedAt: null,
+      lockedBy: null,
+    }));
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: manyPeriods } });
+    const user = userEvent.setup();
+    renderWithClient(<TimesheetPeriodsListView />);
+
+    // Sorted descending by periodStart: the latest period (day 25) renders on
+    // page 1; the 21st-latest (day 5) only appears after paging to page 2.
+    const table = await findLoadedTableBody();
+    expect(table.getByText(formatDisplayDate("2025-01-25"))).toBeInTheDocument();
+    expect(table.queryByText(formatDisplayDate("2025-01-05"))).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /timesheet periods pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText(formatDisplayDate("2025-01-05"))).toBeInTheDocument();
+    expect(screen.queryByText(formatDisplayDate("2025-01-25"))).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
   });
 
   it("filters by lock status using the filter buttons", async () => {

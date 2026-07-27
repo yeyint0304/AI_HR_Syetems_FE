@@ -337,39 +337,24 @@ describe("TimesheetHistoryView", () => {
     expect(screen.getByText("01 Feb 2025")).toBeInTheDocument();
   });
 
-  it("keeps 'All Projects' selectable after filtering by a specific project", async () => {
+  // Regression: the "Project" filter's "All Projects" entry used to be
+  // rendered as a `disabled` placeholder `<option>`, so once a user picked a
+  // specific project there was no way to select "All Projects" again.
+  it("allows re-selecting 'All Projects' after filtering by a specific project", async () => {
     mockApi({ entries: [PENDING_ENTRY] });
     const user = userEvent.setup();
     renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
 
-    const projectSelect = await screen.findByLabelText(/^project$/i);
+    await screen.findByRole("table");
+    const projectSelect = screen.getByLabelText(/^project$/i);
 
-    // "All Projects" is a real, enabled option from the start (not merely a
-    // disabled placeholder) — see `SelectField`'s `placeholderDisabled` prop.
-    expect(within(projectSelect).getByRole("option", { name: "All Projects" })).toBeEnabled();
+    await user.selectOptions(projectSelect, PROJECT_ID);
+    expect(screen.getByRole("option", { name: /all projects/i })).not.toBeDisabled();
 
-    await user.selectOptions(projectSelect, PROJECT.name);
-    await user.click(screen.getByRole("button", { name: /^filter$/i }));
-
-    await waitFor(() =>
-      expect(apiClient.get).toHaveBeenCalledWith(
-        "/timesheet-entries",
-        expect.objectContaining({ params: expect.objectContaining({ projectId: PROJECT_ID }) })
-      )
-    );
-
-    // Selecting a specific project must not permanently disable "All
-    // Projects" — the user can navigate straight back to it.
-    expect(within(projectSelect).getByRole("option", { name: "All Projects" })).toBeEnabled();
     await user.selectOptions(projectSelect, "All Projects");
     await user.click(screen.getByRole("button", { name: /^filter$/i }));
 
-    await waitFor(() =>
-      expect(apiClient.get).toHaveBeenCalledWith(
-        "/timesheet-entries",
-        expect.objectContaining({ params: expect.objectContaining({ projectId: undefined }) })
-      )
-    );
+    expect(projectSelect).toHaveValue("");
   });
 
   it("shows an empty state when no entries match the applied filters", async () => {

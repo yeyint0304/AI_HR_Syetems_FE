@@ -149,6 +149,28 @@ describe("CountriesListView", () => {
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith(`/countries/${MY_ID}`));
   });
 
+  it("paginates the table client-side when there are more countries than fit on one page", async () => {
+    const manyCountries = Array.from({ length: 25 }, (_, index) => ({
+      id: `country-${index}`,
+      code: `C${String(index).padStart(2, "0")}`,
+      name: `Country ${index}`,
+    }));
+    mockApiGet({ countries: manyCountries });
+    const user = userEvent.setup();
+    renderWithClient(<CountriesListView />);
+
+    await screen.findByText("Country 0");
+    expect(screen.queryByText("Country 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /countries pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("Country 20")).toBeInTheDocument();
+    expect(screen.queryByText("Country 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("blocks deletion with an explanatory single-button dialog when the country has linked rate cards", async () => {
     mockApiGet({ rateCards: [RATE_CARD_FOR_SINGAPORE] });
     const user = userEvent.setup();

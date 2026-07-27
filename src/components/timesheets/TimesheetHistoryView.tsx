@@ -564,14 +564,16 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
             label="Project"
             value={draftFilters.projectId}
             onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectId: event.target.value }))}
-            options={sortedProjects.map((project) => ({ value: project.id, label: project.name }))}
-            placeholder="All Projects"
-            // "All Projects" is a real, permanently reselectable filter value
-            // here (there's no separate "Reset" control on this screen) — see
-            // `SelectField`'s `placeholderDisabled` doc comment. Without this,
-            // once a specific project was chosen the native `<select>` would
-            // never let the user navigate back to "All Projects" again.
-            placeholderDisabled={false}
+            // "All Projects" is a real, always-selectable filter value (not
+            // just a placeholder hint) — it must be its own `options` entry
+            // rather than passed via `placeholder`, since `SelectField`
+            // renders the `placeholder` prop as a `disabled` option, which
+            // would let a user pick a specific project but never switch back
+            // to "All Projects" afterwards.
+            options={[
+              { value: "", label: "All Projects" },
+              ...sortedProjects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
           />
         </div>
         <div>

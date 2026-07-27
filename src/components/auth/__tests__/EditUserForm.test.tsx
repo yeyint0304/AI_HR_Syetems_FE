@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { EditUserForm } from "@/components/auth/EditUserForm";
@@ -65,6 +65,32 @@ describe("EditUserForm", () => {
     expect(screen.getByLabelText(/^status$/i)).toHaveValue("true");
     expect(await screen.findByRole("option", { name: /keep current role \(ProjectAdmin\)/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/^role$/i)).toHaveValue("");
+  });
+
+  it("retries loading countries via the 'Try again' action after a failed fetch", async () => {
+    let countriesCallCount = 0;
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/auth/roles") return Promise.resolve({ data: { data: ROLES } });
+      if (url === "/countries") {
+        countriesCallCount += 1;
+        if (countriesCallCount === 1) {
+          return Promise.reject({
+            isAxiosError: true,
+            response: { data: { message: "Unable to load countries." } },
+          });
+        }
+        return Promise.resolve({ data: { data: COUNTRIES } });
+      }
+      return Promise.reject(new Error(`Unhandled GET ${url}`));
+    });
+    const user = userEvent.setup();
+    renderWithClient(<EditUserForm user={USER} onSuccess={jest.fn()} onCancel={jest.fn()} />);
+
+    expect(await screen.findByText(/unable to load countries/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => expect(countriesCallCount).toBe(2));
+    expect(screen.queryByText(/unable to load countries/i)).not.toBeInTheDocument();
   });
 
   it("submits only the changed fields plus roleId: null when the role is left unchanged", async () => {

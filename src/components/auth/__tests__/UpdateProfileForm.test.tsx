@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UpdateProfileForm } from "@/components/auth/UpdateProfileForm";
@@ -73,6 +73,29 @@ describe("UpdateProfileForm", () => {
 
     expect(await screen.findByText(/unable to load countries/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^country$/i)).toBeDisabled();
+  });
+
+  it("retries loading countries via the 'Try again' action after a failed fetch", async () => {
+    let countriesCallCount = 0;
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url !== "/countries") return Promise.reject(new Error(`Unhandled GET ${url}`));
+      countriesCallCount += 1;
+      if (countriesCallCount === 1) {
+        return Promise.reject({
+          isAxiosError: true,
+          response: { data: { message: "Unable to load countries." } },
+        });
+      }
+      return Promise.resolve({ data: { data: COUNTRIES } });
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+
+    expect(await screen.findByText(/unable to load countries/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+
+    await waitFor(() => expect(countriesCallCount).toBe(2));
+    expect(screen.queryByText(/unable to load countries/i)).not.toBeInTheDocument();
   });
 
   it("disables the submit button until the form is dirty", async () => {

@@ -11,16 +11,21 @@ export const ACCESS_TOKEN_COOKIE = "hr_access_token";
 export const REFRESH_TOKEN_COOKIE = "hr_refresh_token";
 
 /**
- * Roles as defined by the backend (see docs/HR_System_User_Stories_Backlog +
- * Technical_Requirements_NextJS_Frontend). Kept as a const object (rather than
- * a TS `enum`) so the values can be safely used for both type-checking and
- * runtime comparisons against decoded JWT claims.
+ * Roles as defined by the backend. Per `Auth/GetRoles`'s saved "200 - Success"
+ * example in `docs/HR_System_BE.postman_collection.json`, the backend only
+ * ever issues exactly these three role names — `SystemAdmin`, `ProjectAdmin`,
+ * and `Employee` (the base, non-admin role; there is no `User` or `Guest`
+ * role on the backend, despite the generic Technical Requirements doc's
+ * mention of them) — and the role claim embedded in the JWT
+ * (`http://schemas.microsoft.com/ws/2008/06/identity/claims/role`) uses the
+ * same three values. Kept as a const object (rather than a TS `enum`) so the
+ * values can be safely used for both type-checking and runtime comparisons
+ * against decoded JWT claims.
  */
 export const USER_ROLES = {
   SYSTEM_ADMIN: "SystemAdmin",
   PROJECT_ADMIN: "ProjectAdmin",
-  USER: "User",
-  GUEST: "Guest",
+  EMPLOYEE: "Employee",
 } as const;
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];

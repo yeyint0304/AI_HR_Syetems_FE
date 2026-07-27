@@ -126,6 +126,39 @@ describe("projectResponseMappers", () => {
     it("returns an empty array for an unrecognized shape", () => {
       expect(mapBackendProjectList({ unexpected: true })).toEqual([]);
     });
+
+    it("unwraps the real backend's envelope, tolerating a paginated Data.Items shape (regression: 'Projects' list rendering empty)", () => {
+      // `Project/GetProjectList`'s saved Postman example has no response
+      // body, so whether `Data` is a bare array or paginated
+      // (`{ Items, TotalCount, Page, PageSize }` — the shape
+      // `Currency/GetAllCurrencies` and `ResourceRoleType/GetAllResourceRoleTypes`
+      // actually use) is unconfirmed either way. This asserts the paginated
+      // shape is handled too, not just a bare array.
+      const result = mapBackendProjectList({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          Items: [{ Id: "1", Code: "PRJ-A", Name: "Project A" }],
+          TotalCount: 1,
+          Page: 1,
+          PageSize: 100,
+        },
+      });
+      expect(result).toEqual([
+        expect.objectContaining({ id: "1", code: "PRJ-A", name: "Project A" }),
+      ]);
+    });
+
+    it("still unwraps a real backend envelope wrapping a bare array", () => {
+      const result = mapBackendProjectList({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: [{ Id: "1", Code: "A", Name: "A" }],
+      });
+      expect(result).toHaveLength(1);
+    });
   });
 
   describe("mapBackendAssignment", () => {
@@ -151,6 +184,33 @@ describe("projectResponseMappers", () => {
 
     it("returns null when required fields are missing", () => {
       expect(mapBackendAssignment({ Id: "a1" })).toBeNull();
+    });
+
+    it("derives userName from FirstName/LastName (regression: 'Assigned Users' list showing raw GUIDs)", () => {
+      // Per the saved "200 - Success" example for `Project/GetProjectAssignments`
+      // in `docs/HR_System_BE.postman_collection.json`, each item carries
+      // `FirstName`/`LastName`/`Email` — never a combined `UserName`/`FullName`
+      // field.
+      expect(
+        mapBackendAssignment({
+          Id: "12565026-b4b4-45d8-a7db-5d0537cf66ab",
+          UserId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+          FirstName: "Lin Thit",
+          LastName: "Htoo edited",
+          Email: "linnthit.htoo@d3-sg.com",
+          ResourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+          RoleName: "Senior Developer",
+          AssignedAt: "2026-06-18T14:11:57",
+          IsActive: true,
+        })
+      ).toEqual({
+        id: "12565026-b4b4-45d8-a7db-5d0537cf66ab",
+        userId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+        userName: "Lin Thit Htoo edited",
+        userEmail: "linnthit.htoo@d3-sg.com",
+        resourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+        resourceRoleTypeName: "Senior Developer",
+      });
     });
 
     it("unwraps the real backend's Data envelope (per the saved Project/AssignResource example)", () => {
@@ -180,6 +240,26 @@ describe("projectResponseMappers", () => {
     it("extracts a bare array", () => {
       const result = mapBackendAssignmentList([{ Id: "a1", UserId: "u1", ResourceRoleTypeId: "r1" }]);
       expect(result).toHaveLength(1);
+    });
+
+    it("unwraps the real backend's envelope wrapping a bare Data array (per the saved Project/GetProjectAssignments example)", () => {
+      const result = mapBackendAssignmentList({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: [
+          {
+            Id: "12565026-b4b4-45d8-a7db-5d0537cf66ab",
+            UserId: "84e4be46-3d9f-4e86-ab08-74d8837958b9",
+            FirstName: "Lin Thit",
+            LastName: "Htoo",
+            ResourceRoleTypeId: "44444444-4444-4444-4444-444444444401",
+          },
+        ],
+      });
+      expect(result).toEqual([
+        expect.objectContaining({ id: "12565026-b4b4-45d8-a7db-5d0537cf66ab", userName: "Lin Thit Htoo" }),
+      ]);
     });
   });
 

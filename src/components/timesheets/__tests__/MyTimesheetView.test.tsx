@@ -169,11 +169,12 @@ function mockApi({
 describe("MyTimesheetView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // A plain `User` by default — matches every pre-existing test's implicit
-    // assumption (assigned-projects scoping applies, and `mockApi`'s default
-    // assignment fixture assigns the current user to every mocked project).
+    // A plain `Employee` by default — matches every pre-existing test's
+    // implicit assumption (assigned-projects scoping applies, and
+    // `mockApi`'s default assignment fixture assigns the current user to
+    // every mocked project).
     useAuthStore.setState({
-      user: { id: CURRENT_USER_ID, email: "user@hrsystem.com", role: USER_ROLES.USER },
+      user: { id: CURRENT_USER_ID, email: "user@hrsystem.com", role: USER_ROLES.EMPLOYEE },
     });
   });
 

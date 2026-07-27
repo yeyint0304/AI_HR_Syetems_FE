@@ -143,6 +143,41 @@ describe("CostRevenueReportView", () => {
     expect(screen.getAllByText("200.00").length).toBeGreaterThan(0);
   });
 
+  it("paginates the breakdown table client-side when there are more projects than fit on one page", async () => {
+    mockApi({
+      report: {
+        year: 2026,
+        month: 7,
+        currency: { id: "c1", code: "SGD", symbol: "$" },
+        projects: Array.from({ length: 25 }, (_, index) => ({
+          project: { id: `p${index}`, code: `P${index}`, name: `Project ${index}` },
+          totalHours: 10,
+          totalCost: 100,
+          totalRevenue: 200,
+          margin: 0.5,
+          breakdown: [],
+        })),
+      },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<CostRevenueReportView />);
+
+    await user.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    await screen.findByText("P0 Subtotal");
+    expect(screen.queryByText("P20 Subtotal")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: /cost and revenue breakdown pagination/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("P20 Subtotal")).toBeInTheDocument();
+    expect(screen.queryByText("P0 Subtotal")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("shows Export links only once a report has been applied", async () => {
     mockApi();
     const user = userEvent.setup();

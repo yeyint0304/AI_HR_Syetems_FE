@@ -126,6 +126,29 @@ describe("RateCardsListView", () => {
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2)); // header + 1 filtered row
   });
 
+  it("paginates the table client-side when there are more rate cards than fit on one page", async () => {
+    const manyRateCards = Array.from({ length: 25 }, (_, index) => ({
+      ...RATE_CARD,
+      id: `rate-card-${index}`,
+      resourceRoleType: { id: `role-${index}`, name: `Role ${index}` },
+    }));
+    mockApiGet({ rateCards: manyRateCards });
+    const user = userEvent.setup();
+    renderWithClient(<RateCardsListView />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Role 0")).toBeInTheDocument();
+    expect(within(table).queryByText("Role 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /rate cards pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(within(table).getByText("Role 20")).toBeInTheDocument();
+    expect(within(table).queryByText("Role 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("excludes inactive/retired currencies from the Add Rate Card currency dropdown", async () => {
     // Regression guard: `GET /api/currencies` no longer filters `isActive`
     // server-side (it now also backs the Administration > Currencies CRUD
