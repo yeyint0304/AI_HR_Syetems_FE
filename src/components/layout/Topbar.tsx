@@ -1,9 +1,10 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
-import { getBreadcrumbLabel } from "@/lib/constants/navigation.constants";
+import { getBreadcrumbTrail } from "@/lib/constants/navigation.constants";
 import type { AuthUser } from "@/types/auth.types";
 
 interface TopbarProps {
@@ -20,13 +21,14 @@ function getInitials(user: AuthUser | null): string {
 }
 
 /**
- * Light top bar shown above the page content: breadcrumb (page title) on the
- * left, mobile nav toggle, and a profile-link avatar on the right — per the
- * wireframe (`docs/HR_System_FE_wireframe.pdf`).
+ * Light top bar shown above the page content: breadcrumb (full ancestor
+ * trail, e.g. "Dashboard / Projects / New project") on the left, mobile nav
+ * toggle, and a profile-link avatar on the right — per the wireframe
+ * (`docs/HR_System_FE_wireframe.pdf`).
  */
 export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
   const pathname = usePathname();
-  const pageTitle = getBreadcrumbLabel(pathname ?? "/home");
+  const trail = getBreadcrumbTrail(pathname ?? "/home");
   const displayName = user?.firstName || user?.username || user?.email || "your account";
 
   return (
@@ -43,17 +45,34 @@ export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
 
         <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
           <ol className="flex items-center gap-1.5">
-            <li>
-              <Link href="/home" className="hover:text-slate-700">
-                Dashboard
-              </Link>
-            </li>
-            {pageTitle !== "Dashboard" && (
-              <>
-                <li aria-hidden="true">/</li>
-                <li className="font-medium text-slate-900">{pageTitle}</li>
-              </>
-            )}
+            {trail.map((item, index) => {
+              // Only the trail's final entry (and only when there's more than
+              // one crumb) is the non-navigable "current page" — every other
+              // crumb, including a lone "Dashboard" on the dashboard route
+              // itself, is a real link.
+              const isCurrentPage = index === trail.length - 1 && trail.length > 1;
+              return (
+                <Fragment key={`${item.label}-${index}`}>
+                  {index > 0 && (
+                    <li aria-hidden="true" className="text-slate-300">
+                      /
+                    </li>
+                  )}
+                  <li
+                    className={isCurrentPage ? "font-medium text-slate-900" : undefined}
+                    aria-current={isCurrentPage ? "page" : undefined}
+                  >
+                    {item.href && !isCurrentPage ? (
+                      <Link href={item.href} className="hover:text-slate-700">
+                        {item.label}
+                      </Link>
+                    ) : (
+                      item.label
+                    )}
+                  </li>
+                </Fragment>
+              );
+            })}
           </ol>
         </nav>
       </div>

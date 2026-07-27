@@ -184,3 +184,68 @@ export function getBreadcrumbLabel(pathname: string): string {
   if (INVOICE_DETAIL_ROUTE_PATTERN.test(pathname)) return "Invoice detail";
   return "Dashboard";
 }
+
+/** One crumb in a breadcrumb trail. `href` is omitted for the current (last) page, which renders as plain text instead of a link. */
+export interface BreadcrumbCrumb {
+  label: string;
+  href?: string;
+}
+
+const HOME_CRUMB: BreadcrumbCrumb = { label: "Dashboard", href: "/home" };
+
+function crumb(label: string, href?: string): BreadcrumbCrumb {
+  return href ? { label, href } : { label };
+}
+
+/**
+ * Full breadcrumb trail (ancestors + current page) for every implemented
+ * route, e.g. `/projects/new` -> `Dashboard / Projects / New project`. Unlike
+ * `getBreadcrumbLabel` (which only resolves the *current* page's label, used
+ * by `Topbar` prior to this trail existing), this also resolves each nested
+ * route's parent list page so multi-level routes render their full path
+ * instead of jumping straight from "Dashboard" to the leaf page.
+ */
+const STATIC_BREADCRUMB_TRAILS: Record<string, BreadcrumbCrumb[]> = {
+  "/home": [HOME_CRUMB],
+  "/profile": [HOME_CRUMB, crumb("Profile")],
+  "/profile/change-password": [HOME_CRUMB, crumb("Profile", "/profile"), crumb("Change password")],
+  "/admin/users": [HOME_CRUMB, crumb("Users")],
+  "/admin/users/new": [HOME_CRUMB, crumb("Users", "/admin/users"), crumb("Create user")],
+  "/admin/currencies": [HOME_CRUMB, crumb("Currencies")],
+  "/admin/exchange-rates": [HOME_CRUMB, crumb("Exchange Rates")],
+  "/admin/rate-cards": [HOME_CRUMB, crumb("Rate Cards")],
+  "/admin/countries": [HOME_CRUMB, crumb("Countries")],
+  "/admin/resource-role-types": [HOME_CRUMB, crumb("Resource Role Types")],
+  "/admin/roles": [HOME_CRUMB, crumb("Roles")],
+  "/projects": [HOME_CRUMB, crumb("Projects")],
+  "/projects/new": [HOME_CRUMB, crumb("Projects", "/projects"), crumb("New project")],
+  "/timesheet-periods": [HOME_CRUMB, crumb("Timesheet Periods")],
+  "/timesheet-periods/new": [
+    HOME_CRUMB,
+    crumb("Timesheet Periods", "/timesheet-periods"),
+    crumb("New timesheet period"),
+  ],
+  "/timesheets": [HOME_CRUMB, crumb("My Timesheets")],
+  "/timesheets/history": [HOME_CRUMB, crumb("Timesheet History")],
+  "/reports": [HOME_CRUMB, crumb("Reports")],
+  "/reports/timesheet": [HOME_CRUMB, crumb("Reports", "/reports"), crumb("Timesheet Report")],
+  "/reports/roles-summary": [HOME_CRUMB, crumb("Reports", "/reports"), crumb("User Roles Summary")],
+  "/reports/cost-revenue": [HOME_CRUMB, crumb("Reports", "/reports"), crumb("Cost & Revenue Report")],
+  "/invoices": [HOME_CRUMB, crumb("Invoices")],
+  "/invoices/generate": [HOME_CRUMB, crumb("Invoices", "/invoices"), crumb("Generate Invoice")],
+};
+
+/** Resolves the full breadcrumb trail for `pathname`, falling back to just `Dashboard` for unknown routes. */
+export function getBreadcrumbTrail(pathname: string): BreadcrumbCrumb[] {
+  if (STATIC_BREADCRUMB_TRAILS[pathname]) return STATIC_BREADCRUMB_TRAILS[pathname];
+  if (PROJECT_ASSIGNMENTS_ROUTE_PATTERN.test(pathname)) {
+    return [HOME_CRUMB, crumb("Projects", "/projects"), crumb("Project assignments")];
+  }
+  if (PROJECT_EDIT_ROUTE_PATTERN.test(pathname)) {
+    return [HOME_CRUMB, crumb("Projects", "/projects"), crumb("Edit project")];
+  }
+  if (INVOICE_DETAIL_ROUTE_PATTERN.test(pathname)) {
+    return [HOME_CRUMB, crumb("Invoices", "/invoices"), crumb("Invoice detail")];
+  }
+  return [HOME_CRUMB];
+}
