@@ -3,9 +3,11 @@ import {
   changePasswordRequest,
   createUserRequest,
   getUnassignedUsersRequest,
+  getUserListRequest,
   loginRequest,
   logoutRequest,
   updateProfileRequest,
+  updateUserRequest,
 } from "@/lib/api/auth.api";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
@@ -108,5 +110,59 @@ describe("auth.api", () => {
     await getUnassignedUsersRequest();
 
     expect(apiClient.get).toHaveBeenCalledWith("/auth/unassigned-users", { params: {} });
+  });
+
+  it("getUserListRequest passes search/page/pageSize as query params and returns the page", async () => {
+    const page = {
+      items: [
+        {
+          id: "u1",
+          username: "tester",
+          email: "tester@d3-sg.com",
+          firstName: "Tester1",
+          lastName: "Sample",
+          roleName: "ProjectAdmin",
+          isActive: true,
+        },
+      ],
+      page: 1,
+      pageSize: 100,
+      totalCount: 1,
+      hasMore: false,
+    };
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: page } });
+
+    const result = await getUserListRequest({ search: "tester", page: 1, pageSize: 100 });
+
+    expect(apiClient.get).toHaveBeenCalledWith("/auth/users", {
+      params: { search: "tester", page: 1, pageSize: 100 },
+    });
+    expect(result).toEqual(page);
+  });
+
+  it("updateUserRequest puts the payload to the user's id and returns the updated user", async () => {
+    const updatedUser = {
+      id: "u1",
+      username: "testeredited",
+      email: "test@d3-sg.com",
+      firstName: "Lin Thit",
+      lastName: "Htoo",
+      roleName: "SystemAdmin",
+      isActive: true,
+    };
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { data: updatedUser } });
+
+    const payload = {
+      username: "testeredited",
+      email: "test@d3-sg.com",
+      firstName: "Lin Thit",
+      lastName: "Htoo",
+      isActive: true,
+      roleId: null,
+    };
+    const result = await updateUserRequest("u1", payload);
+
+    expect(apiClient.put).toHaveBeenCalledWith("/auth/users/u1", payload);
+    expect(result).toEqual(updatedUser);
   });
 });

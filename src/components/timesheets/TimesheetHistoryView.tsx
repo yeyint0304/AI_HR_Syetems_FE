@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
@@ -324,6 +326,13 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     [visibleEntries]
   );
 
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedEntries,
+  } = useTablePagination(visibleEntries);
+
   // Defense-in-depth: if the owning period can't be resolved (still loading,
   // or missing from the list for any reason) treat the entry as locked rather
   // than optimistically allowing an action whose lock status we can't
@@ -616,7 +625,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visibleEntries.map((entry) => {
+                {pagedEntries.map((entry) => {
                   const isEditing = editingEntryId === entry.id;
                   const canEditThisEntry = canEditOwnEntry(entry);
                   const canManageThisEntry = canReviewEntry(entry);
@@ -760,6 +769,13 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
           </div>
         </div>
       )}
+
+      <TablePagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        label="Timesheet entry history pagination"
+      />
 
       <ConfirmDialog
         open={pendingApproveEntry !== null}

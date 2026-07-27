@@ -6,8 +6,10 @@ import { Pencil, Trash2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
 import { useDeleteProject, useProjectList } from "@/hooks/useProjects";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { canManageProjects } from "@/lib/constants/project.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
@@ -40,6 +42,13 @@ export function ProjectsListView() {
     if (!projects) return [];
     return projects.filter((project) => matchesSearch(project, search));
   }, [projects, search]);
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedProjects,
+  } = useTablePagination(filteredProjects);
 
   function handleDeleteConfirm() {
     if (!projectPendingDelete) return;
@@ -137,7 +146,7 @@ export function ProjectsListView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredProjects.map((project) => (
+                {pagedProjects.map((project) => (
                   <tr key={project.id}>
                     <td className="px-4 py-3 font-medium text-slate-900">{project.code}</td>
                     <td className="px-4 py-3 text-slate-700">{project.name}</td>
@@ -188,6 +197,8 @@ export function ProjectsListView() {
           </div>
         )}
       </div>
+
+      <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} label="Projects pagination" />
 
       <ConfirmDialog
         open={projectPendingDelete !== null}

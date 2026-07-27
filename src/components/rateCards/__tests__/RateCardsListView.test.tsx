@@ -126,6 +126,32 @@ describe("RateCardsListView", () => {
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2)); // header + 1 filtered row
   });
 
+  it("excludes inactive/retired currencies from the Add Rate Card currency dropdown", async () => {
+    // Regression guard: `GET /api/currencies` no longer filters `isActive`
+    // server-side (it now also backs the Administration > Currencies CRUD
+    // screen, which must show inactive currencies too), so any retired
+    // currency returned by the shared endpoint must not be offered here as
+    // an option for a new rate card.
+    const inactiveCurrency = {
+      id: "33333333-3333-3333-3333-333333333399",
+      code: "MMK",
+      name: "Myanmar Kyats",
+      symbol: "K",
+      isBaseCurrency: false,
+      isActive: false,
+    };
+    mockApiGet({ currencies: [CURRENCY, inactiveCurrency] });
+    const user = userEvent.setup();
+    renderWithClient(<RateCardsListView />);
+
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: /add rate card/i }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("option", { name: /SGD/i })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("option", { name: /Myanmar Kyats/i })).not.toBeInTheDocument();
+  });
+
   it("creates a new rate card via the Add Rate Card modal", async () => {
     mockApiGet();
     (apiClient.post as jest.Mock).mockResolvedValueOnce({ data: { data: { id: "new-id" } } });

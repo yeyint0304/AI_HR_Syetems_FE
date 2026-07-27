@@ -7,8 +7,10 @@ import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
 import { ExchangeRateForm } from "@/components/exchangeRates/ExchangeRateForm";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useCurrencyList } from "@/hooks/useCurrencies";
 import { useDeleteExchangeRate, useExchangeRateList } from "@/hooks/useExchangeRates";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
 import type { Currency } from "@/types/currency.types";
@@ -66,6 +68,13 @@ export function ExchangeRatesListView() {
   const isLoading = isLoadingCurrencies || isLoadingRates;
   const isError = isCurrenciesError || isRatesError;
   const loadError = currenciesError ?? ratesError;
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedExchangeRates,
+  } = useTablePagination(exchangeRates ?? []);
 
   function handleRetry() {
     refetchCurrencies();
@@ -189,7 +198,7 @@ export function ExchangeRatesListView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {exchangeRates.map((exchangeRate) => (
+                    {pagedExchangeRates.map((exchangeRate) => (
                       <tr key={exchangeRate.id}>
                         <td className="px-4 py-3 font-medium text-slate-900">
                           {exchangeRate.fromCurrency.code}
@@ -229,6 +238,13 @@ export function ExchangeRatesListView() {
               </div>
             )}
           </div>
+
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            label="Exchange rates pagination"
+          />
 
           <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">
             <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

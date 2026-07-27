@@ -79,7 +79,7 @@ describe("apiClient response interceptor", () => {
     await expect(rejected(error)).rejects.toBe(error);
   });
 
-  it("rejects immediately on non-401 errors", async () => {
+  it("rejects immediately on errors with a non-refreshable status (e.g. 500)", async () => {
     const { apiClient } = getModule();
     const rejected = getRejectedHandler(apiClient);
     const error = { config: { url: "/projects" }, response: { status: 500 } };
@@ -125,6 +125,29 @@ describe("apiClient response interceptor", () => {
 
     const error = { config: { url: "/projects" }, response: { status: 401 } };
     await expect(rejected(error)).rejects.toBe(refreshError);
+  });
+
+  it("refreshes once and retries the original request on a 403 (some backends report an expired/invalid token as Forbidden rather than Unauthorized)", async () => {
+    const { apiClient } = getModule();
+    const rejected = getRejectedHandler(apiClient);
+    apiClient.post.mockResolvedValueOnce({ data: { ok: true } });
+    apiClient.mockResolvedValueOnce({ data: { retried: true } });
+
+    const originalRequest = { url: "/countries" };
+    const error = { config: originalRequest, response: { status: 403 } };
+
+    await expect(rejected(error)).resolves.toEqual({ data: { retried: true } });
+    expect(apiClient.post).toHaveBeenCalledWith("/auth/refresh");
+    expect(apiClient).toHaveBeenCalledWith(originalRequest);
+    expect((originalRequest as { _retry?: boolean })._retry).toBe(true);
+  });
+
+  it("rejects immediately on a 403 that already retried once", async () => {
+    const { apiClient } = getModule();
+    const rejected = getRejectedHandler(apiClient);
+    const error = { config: { url: "/countries", _retry: true }, response: { status: 403 } };
+    await expect(rejected(error)).rejects.toBe(error);
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("queues concurrent 401s behind a single in-flight refresh and retries all of them", async () => {

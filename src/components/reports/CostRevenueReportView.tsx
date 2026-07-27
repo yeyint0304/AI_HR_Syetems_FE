@@ -4,8 +4,10 @@ import { Fragment, useMemo, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useProjectList } from "@/hooks/useProjects";
 import { useMonthlyCostRevenue } from "@/hooks/useReports";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { buildMonthlyCostRevenueExportUrl } from "@/lib/api/report.api";
 import { EXPORT_FORMAT_OPTIONS } from "@/lib/constants/report.constants";
 import { monthlyCostRevenueFilterSchema } from "@/lib/validators/report.validators";
@@ -113,6 +115,13 @@ export function CostRevenueReportView() {
       },
     ]);
   }, [report, currencySymbol]);
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedProjects,
+  } = useTablePagination(report?.projects ?? []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,7 +235,7 @@ export function CostRevenueReportView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {report.projects.map((project) => (
+                    {pagedProjects.map((project) => (
                       <Fragment key={project.project.id}>
                         {project.breakdown.map((row, index) => (
                           <tr key={`${project.project.id}-${row.resourceRoleType}-${index}`}>
@@ -280,6 +289,14 @@ export function CostRevenueReportView() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+              <div className="border-t border-slate-200 p-4">
+                <TablePagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  label="Cost and revenue breakdown pagination"
+                />
               </div>
             </div>
 

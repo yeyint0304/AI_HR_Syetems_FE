@@ -51,6 +51,29 @@ export interface CreateUserResult {
 }
 
 /**
+ * Payload for `PUT /api/auth/users/{id}` (backend `Auth/UpdateUser/{id}`),
+ * backing the "Edit" action on the `/admin/users` "User Management" table
+ * (`docs/HR_System_FE_wireframe.pdf`: "/admin/users — ... Actions: Edit").
+ * Unlike `CreateUserRequest`, there is no `password` field — `Auth/UpdateUser`
+ * does not accept one (see `docs/HR_System_BE.postman_collection.json`'s
+ * saved "Update User" request body). `roleId` is optional/nullable: the
+ * backend's saved example sends `"RoleId": null` to mean "keep the user's
+ * current role" — since `Auth/GetUserList` (this screen's data source) only
+ * ever returns the role's *name*, not its id, `EditUserForm` defaults this to
+ * "keep current role" rather than guessing an id from the name.
+ */
+export interface UpdateUserRequest {
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  employeeId?: string | null;
+  countryId?: string | null;
+  isActive: boolean;
+  roleId?: string | null;
+}
+
+/**
  * Reference data backing the "Role" dropdown on the Create User screen
  * (`Auth/CreateUser` requires a `RoleId`). Sourced from `Auth/GetRoles` per
  * `docs/HR_System_BE.postman_collection.json` — distinct from

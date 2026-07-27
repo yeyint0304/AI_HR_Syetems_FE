@@ -35,6 +35,19 @@ describe("Topbar", () => {
     expect(screen.getByText("Profile")).toBeInTheDocument();
   });
 
+  it("renders the full ancestor trail, with a linked intermediate crumb, for a nested route", () => {
+    mockPathname = "/projects/new";
+    render(<Topbar user={user} onOpenMobileNav={jest.fn()} />);
+
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/home");
+    const projectsCrumb = screen.getByRole("link", { name: "Projects" });
+    expect(projectsCrumb).toHaveAttribute("href", "/projects");
+
+    const currentCrumb = screen.getByText("New project");
+    expect(currentCrumb.tagName).not.toBe("A");
+    expect(currentCrumb.closest("li")).toHaveAttribute("aria-current", "page");
+  });
+
   it("calls onOpenMobileNav when the mobile menu button is clicked", async () => {
     const onOpenMobileNav = jest.fn();
     const uiUser = userEvent.setup();

@@ -6,6 +6,7 @@ import { Lock, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useDeleteTimesheetPeriod,
@@ -13,6 +14,7 @@ import {
   useTimesheetPeriodList,
   useUnlockTimesheetPeriod,
 } from "@/hooks/useTimesheetPeriods";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { canManageTimesheetPeriods } from "@/lib/constants/timesheetPeriod.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
@@ -72,6 +74,13 @@ export function TimesheetPeriodsListView() {
     if (!periods) return [];
     return [...periods].sort((a, b) => (a.periodStart < b.periodStart ? 1 : -1));
   }, [periods]);
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedPeriods,
+  } = useTablePagination(sortedPeriods);
 
   function handleConfirm() {
     if (!pendingAction) return;
@@ -218,7 +227,7 @@ export function TimesheetPeriodsListView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedPeriods.map((period) => (
+                {pagedPeriods.map((period) => (
                   <tr key={period.id}>
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {formatDisplayDate(period.periodStart)}
@@ -277,6 +286,13 @@ export function TimesheetPeriodsListView() {
           </div>
         )}
       </div>
+
+      <TablePagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        label="Timesheet periods pagination"
+      />
 
       <ConfirmDialog
         open={pendingAction !== null}

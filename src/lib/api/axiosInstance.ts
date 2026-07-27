@@ -24,6 +24,23 @@ interface RetryableConfig extends AxiosRequestConfig {
 
 const NON_REFRESHABLE_ENDPOINTS = ["/auth/login", "/auth/refresh", "/auth/logout"];
 
+/**
+ * Status codes eligible for the transparent-refresh retry below.
+ *
+ * `401` is the standard "unauthenticated" response. `403` is included too:
+ * some backend auth-middleware configurations (a well-known ASP.NET Core JWT
+ * bearer gotcha) return `403 Forbidden` — rather than `401` — for a missing,
+ * expired, or otherwise invalid access token when no explicit challenge
+ * scheme is configured, indistinguishable client-side from a genuine
+ * role-based authorization failure. Retrying once after a refresh is safe
+ * either way: a real permission error still fails identically after the
+ * retry (refreshing doesn't change the caller's role), while an
+ * expired-token-reported-as-403 now recovers transparently instead of
+ * surfacing a confusing "Forbidden" error (e.g. the `/api/countries`
+ * reference-data fetch backing the Country dropdown/admin screen).
+ */
+const REFRESHABLE_STATUS_CODES = new Set([401, 403]);
+
 let isRefreshing = false;
 let pendingRequests: Array<() => void> = [];
 
@@ -33,19 +50,21 @@ function isNonRefreshableEndpoint(url?: string): boolean {
 }
 
 /**
- * Response interceptor implementing transparent token refresh: on a 401 from
- * any authenticated endpoint, silently call `/auth/refresh` once, then retry
- * the original request. Concurrent 401s are queued behind the single
- * in-flight refresh call to avoid a refresh storm.
+ * Response interceptor implementing transparent token refresh: on a 401 (or
+ * 403 — see `REFRESHABLE_STATUS_CODES`) from any authenticated endpoint,
+ * silently call `/auth/refresh` once, then retry the original request.
+ * Concurrent 401/403s are queued behind the single in-flight refresh call to
+ * avoid a refresh storm.
  */
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as RetryableConfig | undefined;
+    const status = error.response?.status;
 
     if (
       !originalRequest ||
-      error.response?.status !== 401 ||
+      !REFRESHABLE_STATUS_CODES.has(status) ||
       originalRequest._retry ||
       isNonRefreshableEndpoint(originalRequest.url)
     ) {

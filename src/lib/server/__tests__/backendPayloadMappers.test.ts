@@ -16,6 +16,7 @@ import {
   toBackendUpdateProfilePayload,
   toBackendUpdateProjectPayload,
   toBackendUpdateTimesheetEntryPayload,
+  toBackendUpdateUserPayload,
 } from "@/lib/server/backendPayloadMappers";
 
 describe("backendPayloadMappers", () => {
@@ -116,6 +117,49 @@ describe("backendPayloadMappers", () => {
       expect.objectContaining({
         EmployeeId: "EMP-1",
         CountryId: "country-guid",
+      })
+    );
+  });
+
+  it("maps an update-user payload, defaulting missing employeeId/countryId/roleId to null", () => {
+    expect(
+      toBackendUpdateUserPayload({
+        username: "testeredited",
+        email: "test@d3-sg.com",
+        firstName: "Lin Thit",
+        lastName: "Htoo",
+        isActive: true,
+      })
+    ).toEqual({
+      Username: "testeredited",
+      Email: "test@d3-sg.com",
+      FirstName: "Lin Thit",
+      LastName: "Htoo",
+      EmployeeId: null,
+      CountryId: null,
+      IsActive: true,
+      RoleId: null,
+    });
+  });
+
+  it("maps an update-user payload, preserving a provided employeeId/countryId/roleId and isActive: false", () => {
+    expect(
+      toBackendUpdateUserPayload({
+        username: "testeredited",
+        email: "test@d3-sg.com",
+        firstName: "Lin Thit",
+        lastName: "Htoo",
+        employeeId: "EMP002",
+        countryId: "country-guid",
+        isActive: false,
+        roleId: "role-guid",
+      })
+    ).toEqual(
+      expect.objectContaining({
+        EmployeeId: "EMP002",
+        CountryId: "country-guid",
+        IsActive: false,
+        RoleId: "role-guid",
       })
     );
   });

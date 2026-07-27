@@ -8,6 +8,7 @@ import { SelectField } from "@/components/ui/SelectField";
 import { SearchableSelectField, type SearchableSelectOption } from "@/components/ui/SearchableSelectField";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { TablePagination } from "@/components/ui/TablePagination";
 import {
   assignResourceSchema,
   type AssignResourceFormValues,
@@ -21,6 +22,7 @@ import {
 import { useResourceRoleTypes } from "@/hooks/useResourceRoleTypes";
 import { useUnassignedUsersInfinite } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { ProjectAssignment } from "@/types/project.types";
 
@@ -62,6 +64,12 @@ function getInitials(name?: string): string {
  *   - "Resource role" is sourced from `ResourceRoleType/GetAllResourceRoleTypes`
  *     (`hooks/useResourceRoleTypes.ts`) — a small, fully-loaded list, so it
  *     stays a plain `SelectField`.
+ *
+ * `Project/GetProjectAssignments/{projectId}` (`hooks/useProjects.ts#useProjectAssignments`)
+ * returns the full, unpaginated set of assignments for the project, so the
+ * "Assigned Users" list is paginated client-side via `useTablePagination` +
+ * `TablePagination`, the same convention used by every other reference-data
+ * list in this app (`CurrenciesListView`, `CountriesListView`, etc.).
  */
 export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProps) {
   const [formError, setFormError] = useState<string | null>(null);
@@ -95,8 +103,8 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
 
   const unassignedUserOptions: SearchableSelectOption[] = useMemo(
     () =>
-      (unassignedUsersPages?.pages ?? []).flatMap((page) =>
-        page.items.map((candidate) => ({
+      (unassignedUsersPages?.pages ?? []).flatMap((unassignedUsersPage) =>
+        unassignedUsersPage.items.map((candidate) => ({
           value: candidate.id,
           label: unassignedUserOptionLabel(candidate),
         }))
@@ -115,6 +123,13 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
     !isUnassignedUsersLoading &&
     !isUnassignedUsersError &&
     totalUnassignedUsers === 0;
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pageItems: pagedAssignments,
+  } = useTablePagination(assignments ?? []);
 
   const assignResourceMutation = useAssignResource(projectId);
   const removeResourceMutation = useRemoveResource(projectId);
@@ -189,42 +204,52 @@ export function ProjectAssignmentsView({ projectId }: ProjectAssignmentsViewProp
         ) : !assignments || assignments.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">No users are currently assigned to this project.</p>
         ) : (
-          <ul className="mt-4 divide-y divide-slate-100">
-            {assignments.map((assignment) => (
-              <li key={assignment.id} className="flex items-center justify-between gap-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white"
-                  >
-                    {getInitials(assignment.userName)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {assignment.userName ?? assignment.userId}
-                    </p>
-                    {assignment.userEmail && (
-                      <p className="truncate text-xs text-slate-500">{assignment.userEmail}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  {assignment.resourceRoleTypeName && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                      {assignment.resourceRoleTypeName}
+          <>
+            <ul className="mt-4 divide-y divide-slate-100">
+              {pagedAssignments.map((assignment) => (
+                <li key={assignment.id} className="flex items-center justify-between gap-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white"
+                    >
+                      {getInitials(assignment.userName)}
                     </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setAssignmentPendingRemoval(assignment)}
-                    className="text-xs font-medium text-red-600 hover:text-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {assignment.userName ?? assignment.userId}
+                      </p>
+                      {assignment.userEmail && (
+                        <p className="truncate text-xs text-slate-500">{assignment.userEmail}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    {assignment.resourceRoleTypeName && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {assignment.resourceRoleTypeName}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentPendingRemoval(assignment)}
+                      className="text-xs font-medium text-red-600 hover:text-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4">
+              <TablePagination
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                label="Assigned users pagination"
+              />
+            </div>
+          </>
         )}
       </section>
 

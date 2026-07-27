@@ -64,6 +64,31 @@ export const createUserSchema = z.object({
 export type CreateUserFormValues = z.infer<typeof createUserSchema>;
 
 /**
+ * Backs `EditUserForm` (the `/admin/users` "Edit" modal). Mirrors
+ * `createUserSchema` minus `password` (`Auth/UpdateUser` accepts no password
+ * field) and adds `isActive`/`roleId` — `roleId` is optional/nullable since
+ * leaving it blank means "keep the user's current role" (see
+ * `types/auth.types.ts#UpdateUserRequest`'s doc comment for why).
+ */
+export const updateUserSchema = z.object({
+  username: z.string().trim().min(3, "Username must be at least 3 characters.").max(50, "Username is too long."),
+  email: z.email("Enter a valid email address."),
+  firstName: z.string().trim().min(1, "First name is required.").max(100, "First name is too long."),
+  lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
+  employeeId: z.string().trim().max(50, "Employee ID is too long.").optional().or(z.literal("")),
+  countryId: z
+    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
+    .optional()
+    .nullable(),
+  isActive: z.boolean(),
+  roleId: z
+    .union([guidSchema("Select a valid role."), z.literal("")])
+    .optional()
+    .nullable(),
+});
+export type UpdateUserFormValues = z.infer<typeof updateUserSchema>;
+
+/**
  * Server-side query schema for `GET /api/auth/unassigned-users`, backing the
  * scroll-paginated, searchable "User" combobox on the Project Assignments
  * screen. `Auth/GetUserList` itself documents no query parameters in

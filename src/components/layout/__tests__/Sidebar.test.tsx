@@ -63,13 +63,33 @@ describe("Sidebar", () => {
     expect(screen.getByRole("link", { name: /dashboard/i })).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders not-yet-implemented items as disabled, non-navigating controls", () => {
+  it("renders the implemented Currencies item (SystemAdmin) as a real navigation link", () => {
     renderSidebar(systemAdminUser);
 
-    const currenciesItem = screen.getByRole("button", { name: /currencies/i });
-    expect(currenciesItem).toBeDisabled();
-    expect(currenciesItem).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("link", { name: /^currencies$/i })).not.toBeInTheDocument();
+    const currenciesLink = screen.getByRole("link", { name: /^currencies$/i });
+    expect(currenciesLink).toHaveAttribute("href", "/admin/currencies");
+    expect(screen.queryByRole("button", { name: /currencies/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the implemented Countries item (SystemAdmin) as a real navigation link", () => {
+    renderSidebar(systemAdminUser);
+
+    const countriesLink = screen.getByRole("link", { name: /^countries$/i });
+    expect(countriesLink).toHaveAttribute("href", "/admin/countries");
+  });
+
+  it("renders the implemented Resource Role Types item (SystemAdmin) as a real navigation link", () => {
+    renderSidebar(systemAdminUser);
+
+    const resourceRoleTypesLink = screen.getByRole("link", { name: /^resource role types$/i });
+    expect(resourceRoleTypesLink).toHaveAttribute("href", "/admin/resource-role-types");
+  });
+
+  it("renders the implemented Roles item (SystemAdmin) as a real navigation link", () => {
+    renderSidebar(systemAdminUser);
+
+    const rolesLink = screen.getByRole("link", { name: /^roles$/i });
+    expect(rolesLink).toHaveAttribute("href", "/admin/roles");
   });
 
   it("renders the implemented Users item (SystemAdmin) as a real navigation link to the User Management list", () => {

@@ -59,10 +59,13 @@ function unassignedUsersPage(items: unknown[]) {
   return { items, page: 1, pageSize: 20, totalCount: items.length, hasMore: false };
 }
 
-function mockGetResponses(unassignedUsers: unknown[] = UNASSIGNED_USERS) {
+function mockGetResponses(
+  unassignedUsers: unknown[] = UNASSIGNED_USERS,
+  assignments: unknown[] = [ASSIGNMENT]
+) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/projects/1") return Promise.resolve({ data: { data: PROJECT } });
-    if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: [ASSIGNMENT] } });
+    if (url === "/projects/1/assignments") return Promise.resolve({ data: { data: assignments } });
     if (url === "/resource-role-types") return Promise.resolve({ data: { data: ROLE_TYPES } });
     if (url === "/auth/unassigned-users") {
       return Promise.resolve({ data: { data: unassignedUsersPage(unassignedUsers) } });
@@ -255,5 +258,30 @@ describe("ProjectAssignmentsView", () => {
     await user.click(within(dialog).getByRole("button", { name: /^remove$/i }));
 
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith("/projects/1/assignments/a1"));
+  });
+
+  it("paginates the assigned users list client-side when there are more assignments than fit on one page", async () => {
+    const manyAssignments = Array.from({ length: 25 }, (_, index) => ({
+      id: `assignment-${index}`,
+      userId: `user-${index}`,
+      userName: `User ${String(index).padStart(2, "0")}`,
+      userEmail: `user${index}@hrsystem.com`,
+      resourceRoleTypeId: ROLE_TYPE_ID_SENIOR,
+      resourceRoleTypeName: "Senior Developer",
+    }));
+    mockGetResponses(UNASSIGNED_USERS, manyAssignments);
+    const user = userEvent.setup();
+    renderWithClient(<ProjectAssignmentsView projectId="1" />);
+
+    await screen.findByText("User 00");
+    expect(screen.queryByText("User 20")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /assigned users pagination/i })).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("User 20")).toBeInTheDocument();
+    expect(screen.queryByText("User 00")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
   });
 });

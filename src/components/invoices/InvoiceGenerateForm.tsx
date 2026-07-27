@@ -15,6 +15,7 @@ import { useTimesheetEntryList } from "@/hooks/useTimesheetEntries";
 import { generateInvoiceSchema, type GenerateInvoiceFormValues } from "@/lib/validators/invoice.validators";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { isDateOnlyInRange } from "@/lib/utils/week";
+import { filterSelectableCurrencies } from "@/lib/utils/currency";
 
 const DEFAULT_VALUES: GenerateInvoiceFormValues = {
   projectId: "",
@@ -94,7 +95,10 @@ export function InvoiceGenerateForm() {
     [projects]
   );
   const sortedCurrencies = useMemo(
-    () => [...(currencies ?? [])].sort((a, b) => a.code.localeCompare(b.code)),
+    () =>
+      filterSelectableCurrencies([...(currencies ?? [])]).sort((a, b) =>
+        a.code.localeCompare(b.code)
+      ),
     [currencies]
   );
   const baseCurrency = useMemo(

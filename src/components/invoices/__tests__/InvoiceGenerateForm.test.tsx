@@ -26,11 +26,22 @@ function renderWithClient(ui: React.ReactElement) {
 const PROJECT_ALPHA = { id: "p1", code: "PRJ-ALPHA", name: "Project Alpha" };
 const CURRENCY_SGD = { id: "c1", code: "SGD", name: "Singapore Dollar", symbol: "S$", isBaseCurrency: true, isActive: true };
 const CURRENCY_USD = { id: "c2", code: "USD", name: "US Dollar", symbol: "$", isBaseCurrency: false, isActive: true };
+const CURRENCY_MMK_INACTIVE = {
+  id: "c3",
+  code: "MMK",
+  name: "Myanmar Kyats",
+  symbol: "K",
+  isBaseCurrency: false,
+  isActive: false,
+};
 
-function mockGetResponses(approvedEntries: unknown[] = []) {
+function mockGetResponses(
+  approvedEntries: unknown[] = [],
+  currencies: unknown[] = [CURRENCY_SGD, CURRENCY_USD]
+) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT_ALPHA] } });
-    if (url === "/currencies") return Promise.resolve({ data: { data: [CURRENCY_SGD, CURRENCY_USD] } });
+    if (url === "/currencies") return Promise.resolve({ data: { data: currencies } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: approvedEntries } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
   });
@@ -62,6 +73,22 @@ describe("InvoiceGenerateForm", () => {
     expect(screen.getByLabelText(/client email/i)).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByLabelText(/invoice currency/i)).toHaveValue("c1"));
+  });
+
+  it("excludes inactive/retired currencies from the Invoice Currency dropdown", async () => {
+    // Regression guard: `GET /api/currencies` no longer filters `isActive`
+    // server-side (it now also backs the Administration > Currencies CRUD
+    // screen, which must show inactive currencies too), so any retired
+    // currency returned by the shared endpoint must not be offered here as
+    // an option for a *new* invoice.
+    mockGetResponses([], [CURRENCY_SGD, CURRENCY_USD, CURRENCY_MMK_INACTIVE]);
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await screen.findByRole("option", { name: /US Dollar/i });
+
+    expect(
+      screen.queryByRole("option", { name: /Myanmar Kyats/i })
+    ).not.toBeInTheDocument();
   });
 
   it("shows client-side validation errors when submitted empty", async () => {
