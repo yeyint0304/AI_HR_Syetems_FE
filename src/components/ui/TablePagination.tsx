@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import ReactPaginate from "react-paginate";
 
 export interface TablePaginationProps {
@@ -22,13 +25,25 @@ export interface TablePaginationProps {
  * comment for the full list) — updating this one file upgrades every
  * consumer at once rather than hand-rolling Previous/Next markup per view.
  *
- * `react-paginate`'s `<PaginationBoxView>` already renders its own
- * `<ul role="navigation" aria-label="Pagination">` internally (that label
- * isn't overridable via props), so this wraps it in an outer `<nav>` with the
- * caller-supplied, table-specific `label` — e.g. a screen reader user gets
- * "Currencies pagination" as the outer landmark name, matching every other
- * accessible-name convention in this app, while `react-paginate`'s own inner
- * landmark stays as an implementation detail.
+ * `react-paginate`'s `<PaginationBoxView>` unconditionally renders its own
+ * `<ul role="navigation" aria-label="Pagination">` internally — that's
+ * hardcoded in `PaginationBoxView.js` and isn't overridable via any v8 prop.
+ * Left as-is, that produces two nested `navigation` landmarks per control
+ * (this component's own outer `<nav aria-label={label}>` plus
+ * react-paginate's inner `<ul>`), and `role="navigation"` on a `<ul>` also
+ * strips its implicit `list` role — which in turn strips its `<li>`
+ * children's implicit `listitem` role (a real `axe`/`jest-axe` violation,
+ * confirmed against `56b41b1`'s QA history). Since props can't fix this, a
+ * `ref` + `useEffect` strips the inner `<ul>`'s `role`/`aria-label`
+ * attributes right after mount: that collapses the control back down to a
+ * single landmark (this component's own outer `<nav>`, named with the
+ * caller-supplied, table-specific `label` — e.g. "Currencies pagination",
+ * matching every other accessible-name convention in this app) and restores
+ * native list/listitem semantics for screen readers. React's reconciler
+ * never re-applies `role`/`aria-label` to that `<ul>` on subsequent
+ * `ReactPaginate` re-renders (its own JSX output for those two props is
+ * identical every render, so there's nothing for the diff to re-commit),
+ * so the manual removal sticks across page changes.
  *
  * `previousAriaLabel`/`nextAriaLabel` are set to the exact same text as the
  * visible `previousLabel`/`nextLabel` ("Previous"/"Next") — ARIA's
@@ -51,6 +66,15 @@ export function TablePagination({
   label,
   isDisabled = false,
 }: TablePaginationProps) {
+  const listContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const nestedNav = listContainerRef.current?.querySelector('ul[role="navigation"]');
+    if (!nestedNav) return;
+    nestedNav.removeAttribute("role");
+    nestedNav.removeAttribute("aria-label");
+  }, [page, totalPages]);
+
   if (totalPages <= 1) return null;
 
   return (
@@ -62,6 +86,7 @@ export function TablePagination({
         Page {page} of {totalPages}
       </p>
       <div
+        ref={listContainerRef}
         aria-disabled={isDisabled || undefined}
         className={isDisabled ? "pointer-events-none opacity-60" : undefined}
       >

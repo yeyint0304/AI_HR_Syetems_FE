@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { TablePagination } from "@/components/ui/TablePagination";
+
+expect.extend(toHaveNoViolations);
 
 describe("TablePagination", () => {
   it("renders nothing when there is only one page", () => {
@@ -77,5 +80,35 @@ describe("TablePagination", () => {
     );
     await user.click(screen.getByRole("button", { name: /next/i }));
     expect(onPageChange).not.toHaveBeenCalled();
+  });
+
+  it("exposes exactly one `navigation` landmark (no nested landmark from react-paginate's internal `<ul>`)", () => {
+    render(<TablePagination page={1} totalPages={3} onPageChange={jest.fn()} label="Currencies pagination" />);
+
+    // react-paginate's `PaginationBoxView` hardcodes an inner
+    // `<ul role="navigation" aria-label="Pagination">`; `TablePagination`
+    // strips that role/label post-mount so callers are left with a single,
+    // correctly-named `<nav>` landmark instead of two nested ones.
+    expect(screen.getAllByRole("navigation")).toHaveLength(1);
+    expect(screen.getByRole("navigation")).toHaveAccessibleName("Currencies pagination");
+  });
+
+  it("preserves native list/listitem semantics for the page-link list", () => {
+    render(<TablePagination page={1} totalPages={3} onPageChange={jest.fn()} label="Currencies pagination" />);
+
+    // Stripping `role="navigation"` off react-paginate's inner `<ul>`
+    // restores its implicit `list` role, which in turn restores its `<li>`
+    // children's implicit `listitem` role (Previous + 3 pages + Next = 5).
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+  });
+
+  it("has no detectable accessibility violations (jest-axe)", async () => {
+    const { container } = render(
+      <TablePagination page={2} totalPages={5} onPageChange={jest.fn()} label="Currencies pagination" />
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
