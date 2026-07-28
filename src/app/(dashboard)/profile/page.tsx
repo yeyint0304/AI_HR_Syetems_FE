@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getAccessToken } from "@/lib/server/authCookies";
-import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
+import { getCurrentAuthUser } from "@/lib/server/authCookies";
 import { UpdateProfileForm } from "@/components/auth/UpdateProfileForm";
 
 export const metadata: Metadata = { title: "Update profile | HR System" };
 
 export default async function ProfilePage() {
-  const accessToken = await getAccessToken();
-  const claims = accessToken ? decodeJwt(accessToken) : null;
-  const user = claims ? mapClaimsToAuthUser(claims) : null;
+  const user = await getCurrentAuthUser();
 
   if (!user) {
     redirect("/login");
@@ -27,6 +24,7 @@ export default async function ProfilePage() {
             lastName: user.lastName ?? "",
             email: user.email,
             countryId: user.countryId ?? "",
+            username: user.username ?? "",
           }}
         />
       </div>

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { clearAuthCookies, getRefreshToken, setAuthCookies } from "@/lib/server/authCookies";
+import {
+  clearAuthCookies,
+  getRefreshToken,
+  getUsernameCookie,
+  setAuthCookies,
+} from "@/lib/server/authCookies";
 import { toBackendRefreshTokenPayload } from "@/lib/server/backendPayloadMappers";
 import { extractTokens, computeAccessTokenMaxAge } from "@/lib/server/tokenUtils";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
@@ -35,14 +40,21 @@ export async function POST() {
     }
 
     const claims = decodeJwt(tokens.accessToken);
-    const user = claims ? mapClaimsToAuthUser(claims) : null;
-    if (!user) {
+    const baseUser = claims ? mapClaimsToAuthUser(claims) : null;
+    if (!baseUser) {
       await clearAuthCookies();
       return NextResponse.json(
         { message: "Session expired. Please sign in again." },
         { status: 401 }
       );
     }
+
+    // The refreshed JWT still carries no `username` claim on the real
+    // backend (see `USERNAME_COOKIE`'s doc comment) — overlay the cached
+    // value cached at login/profile-update so this response stays accurate.
+    const user = baseUser.username
+      ? baseUser
+      : { ...baseUser, username: (await getUsernameCookie()) ?? undefined };
 
     await setAuthCookies(tokens.accessToken, tokens.refreshToken, computeAccessTokenMaxAge(claims));
     return NextResponse.json({ user }, { status: 200 });

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { getAccessToken } from "@/lib/server/authCookies";
+import { getAccessToken, getUsernameCookie, setUsernameCookie } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
 import { toBackendUpdateProfilePayload } from "@/lib/server/backendPayloadMappers";
+import { extractUsername } from "@/lib/server/tokenUtils";
 import { updateProfileSchema } from "@/lib/validators/auth.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 
@@ -53,11 +54,22 @@ export async function PUT(request: Request) {
   }
 
   try {
-    await backendApiClient.put(
+    const response = await backendApiClient.put(
       "/Auth/UpdateProfile",
       toBackendUpdateProfilePayload(parsed.data),
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
+
+    // `Auth/UpdateProfile`'s response includes `Username` (see the saved
+    // example in `docs/HR_System_BE.postman_collection.json`) even though it
+    // can never be *changed* via this endpoint — used here to (re)cache it
+    // via `USERNAME_COOKIE`, since the real backend's JWT itself never
+    // carries a `username` claim (see `mapClaimsToAuthUser`/`currentUser`
+    // above, whose `username` is therefore usually undefined on that path).
+    const username = extractUsername(response.data) ?? currentUser.username ?? (await getUsernameCookie());
+    if (username) {
+      await setUsernameCookie(username);
+    }
 
     const updatedUser = {
       ...currentUser,
@@ -65,6 +77,7 @@ export async function PUT(request: Request) {
       lastName: parsed.data.lastName,
       email: parsed.data.email,
       countryId: parsed.data.countryId || null,
+      username: username ?? currentUser.username,
     };
 
     return NextResponse.json({ user: updatedUser }, { status: 200 });

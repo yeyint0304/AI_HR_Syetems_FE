@@ -14,8 +14,10 @@ interface TopbarProps {
 
 function getInitials(user: AuthUser | null): string {
   if (!user) return "?";
-  const first = user.firstName?.[0] ?? user.username?.[0] ?? user.email?.[0] ?? "";
-  const last = user.lastName?.[0] ?? "";
+  // Mirror Sidebar.tsx's precedence (username over given name/email) so the
+  // same signed-in user renders consistent initials in both nav elements.
+  const first = user.username?.[0] ?? user.firstName?.[0] ?? user.email?.[0] ?? "";
+  const last = user.username ? "" : (user.lastName?.[0] ?? "");
   const initials = `${first}${last}`.trim();
   return initials ? initials.toUpperCase() : "U";
 }
@@ -29,7 +31,10 @@ function getInitials(user: AuthUser | null): string {
 export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
   const pathname = usePathname();
   const trail = getBreadcrumbTrail(pathname ?? "/home");
-  const displayName = user?.firstName || user?.username || user?.email || "your account";
+  // Prefer `username` over the given name/email, matching Sidebar.tsx's
+  // footer card — otherwise the same user's profile-avatar `aria-label`
+  // here would read differently than the identity shown in the sidebar.
+  const displayName = user?.username || user?.firstName || user?.email || "your account";
 
   return (
     <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">

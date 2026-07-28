@@ -11,6 +11,22 @@ export const ACCESS_TOKEN_COOKIE = "hr_access_token";
 export const REFRESH_TOKEN_COOKIE = "hr_refresh_token";
 
 /**
+ * httpOnly cookie holding the signed-in user's `username`.
+ *
+ * The real backend's access-token JWT (see the saved `Auth/Login` example in
+ * `docs/HR_System_BE.postman_collection.json`) carries no `username` claim at
+ * all — only `sub`/`email`/a combined `name` (display name) claim — so
+ * `lib/utils/jwt.ts#mapClaimsToAuthUser` can never recover a `username` from
+ * the JWT alone on the real backend. `Auth/Login` and `Auth/UpdateProfile`
+ * responses *do* include `Username` directly in their body, though, so this
+ * cookie caches that value (set at login/profile-update) purely for display
+ * purposes (Sidebar/Topbar "who am I" card, the Profile page's read-only
+ * Username field) — it plays no role in authentication/authorization, which
+ * remains entirely driven by the JWT access token.
+ */
+export const USERNAME_COOKIE = "hr_username";
+
+/**
  * Roles as defined by the backend. Per `Auth/GetRoles`'s saved "200 - Success"
  * example in `docs/HR_System_BE.postman_collection.json`, the backend only
  * ever issues exactly these three role names — `SystemAdmin`, `ProjectAdmin`,

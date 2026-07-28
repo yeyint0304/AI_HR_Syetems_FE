@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { computeAccessTokenMaxAge, extractTokens } from "@/lib/server/tokenUtils";
+import { computeAccessTokenMaxAge, extractTokens, extractUsername } from "@/lib/server/tokenUtils";
 import { DEFAULT_ACCESS_TOKEN_MAX_AGE_SECONDS } from "@/lib/constants/auth.constants";
 
 describe("extractTokens", () => {
@@ -64,6 +64,39 @@ describe("extractTokens", () => {
         Data: null,
       })
     ).toBeNull();
+  });
+});
+
+describe("extractUsername", () => {
+  it("extracts Username nested under the real backend's Data envelope (Auth/Login, Auth/UpdateProfile)", () => {
+    expect(
+      extractUsername({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: { Username: "admin", Email: "admin@hrsystem.com" },
+      })
+    ).toBe("admin");
+  });
+
+  it("extracts a camelCase username as a fallback", () => {
+    expect(extractUsername({ username: "jane.doe" })).toBe("jane.doe");
+  });
+
+  it("returns undefined when Username is absent", () => {
+    expect(extractUsername({ Email: "admin@hrsystem.com" })).toBeUndefined();
+  });
+
+  it("returns undefined when the envelope reports a logical failure (IsSuccess: false)", () => {
+    expect(
+      extractUsername({ StatusCode: 400, IsSuccess: false, Message: "Bad request.", Data: null })
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for non-object payloads", () => {
+    expect(extractUsername(null)).toBeUndefined();
+    expect(extractUsername("not an object")).toBeUndefined();
+    expect(extractUsername(undefined)).toBeUndefined();
   });
 });
 

@@ -172,6 +172,18 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
 
+  it("prefers the account username over the given name and email in the footer card", () => {
+    const userWithUsername: AuthUser = {
+      ...projectAdminUser,
+      username: "sarah.chen",
+    };
+    renderSidebar(userWithUsername);
+
+    expect(screen.getByText("sarah.chen")).toBeInTheDocument();
+    expect(screen.queryByText("Sarah")).not.toBeInTheDocument();
+    expect(screen.getByText("ProjectAdmin")).toBeInTheDocument();
+  });
+
   it("invokes onNavigate when a real nav link is clicked", async () => {
     const onNavigate = jest.fn();
     const user = userEvent.setup();

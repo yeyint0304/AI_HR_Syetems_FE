@@ -25,6 +25,7 @@ const initialValues = {
   lastName: "Doe",
   email: "jane@example.com",
   countryId: null,
+  username: "jane.doe",
 };
 
 const COUNTRIES = [
@@ -46,6 +47,14 @@ describe("UpdateProfileForm", () => {
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Jane");
     expect(screen.getByLabelText(/last name/i)).toHaveValue("Doe");
     expect(screen.getByLabelText(/email address/i)).toHaveValue("jane@example.com");
+    expect(screen.getByLabelText(/^username$/i)).toHaveValue("jane.doe");
+  });
+
+  it("renders the Username field as read-only, since it can't be changed via profile update", () => {
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+    const usernameField = screen.getByLabelText(/^username$/i);
+    expect(usernameField).toBeDisabled();
+    expect(usernameField).toHaveAttribute("readonly");
   });
 
   it("renders a searchable Country combobox populated from the countries endpoint (GET /countries)", async () => {

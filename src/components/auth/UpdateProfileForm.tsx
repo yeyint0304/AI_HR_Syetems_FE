@@ -17,7 +17,7 @@ import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { AuthUser } from "@/types/auth.types";
 
 interface UpdateProfileFormProps {
-  initialValues: Pick<AuthUser, "firstName" | "lastName" | "email" | "countryId">;
+  initialValues: Pick<AuthUser, "firstName" | "lastName" | "email" | "countryId" | "username">;
 }
 
 export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
@@ -89,13 +89,22 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
         <TextField label="Last name" error={errors.lastName?.message} {...register("lastName")} />
       </div>
 
-      <TextField
-        label="Email address"
-        type="email"
-        autoComplete="email"
-        error={errors.email?.message}
-        {...register("email")}
-      />
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField
+          label="Username"
+          value={initialValues.username ?? ""}
+          disabled
+          readOnly
+          hint="Contact an administrator to change your username."
+        />
+        <TextField
+          label="Email address"
+          type="email"
+          autoComplete="email"
+          error={errors.email?.message}
+          {...register("email")}
+        />
+      </div>
 
       <Controller
         control={control}

@@ -14,8 +14,8 @@ interface SidebarProps {
 
 function getInitials(user: AuthUser | null): string {
   if (!user) return "?";
-  const first = user.firstName?.[0] ?? user.username?.[0] ?? user.email?.[0] ?? "";
-  const last = user.lastName?.[0] ?? "";
+  const first = user.username?.[0] ?? user.firstName?.[0] ?? user.email?.[0] ?? "";
+  const last = user.username ? "" : (user.lastName?.[0] ?? "");
   const initials = `${first}${last}`.trim();
   return initials ? initials.toUpperCase() : "U";
 }
@@ -47,7 +47,10 @@ function resolveActiveHref(pathname: string | null, hrefs: string[]): string | n
  */
 export function Sidebar({ user, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const displayName = user?.firstName || user?.username || user?.email || "Guest";
+  // Prefer the account `username` in the footer card (e.g. "sarah.chen") over
+  // the given name/email — the sidebar's user/sign-out footer is meant to
+  // read as "<username> / <role>", not a personal display name.
+  const displayName = user?.username || user?.firstName || user?.email || "Guest";
 
   const visibleSections = NAV_SECTIONS.filter(
     (section) => !section.requiredRole || user?.role === section.requiredRole

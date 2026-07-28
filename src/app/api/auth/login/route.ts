@@ -1,24 +1,40 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { setAuthCookies } from "@/lib/server/authCookies";
+import { setAuthCookies, setUsernameCookie } from "@/lib/server/authCookies";
 import { toBackendLoginPayload } from "@/lib/server/backendPayloadMappers";
-import { extractTokens, computeAccessTokenMaxAge } from "@/lib/server/tokenUtils";
+import { extractTokens, extractUsername, computeAccessTokenMaxAge } from "@/lib/server/tokenUtils";
 import { loginSchema } from "@/lib/validators/auth.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { logger } from "@/lib/utils/logger";
 import { createMockAuthTokens, isBackendUnreachableError, isMockAuthEnabled } from "@/lib/server/mockAuth";
 
-/** Decodes tokens, derives the safe `AuthUser` DTO, sets cookies, and responds. */
-async function issueSession(tokens: { accessToken: string; refreshToken: string }) {
+/**
+ * Decodes tokens, derives the safe `AuthUser` DTO, sets cookies, and
+ * responds. `username` is the `Auth/Login` response body's `Username` field
+ * (see `extractUsername`) when the caller has it — the real backend's JWT
+ * never carries a `username` claim, so `mapClaimsToAuthUser` alone can't
+ * resolve it there; the mock-auth fallback's JWT does carry one, so this
+ * falls back to whatever `mapClaimsToAuthUser` already resolved in that case.
+ */
+async function issueSession(
+  tokens: { accessToken: string; refreshToken: string },
+  username?: string
+) {
   const claims = decodeJwt(tokens.accessToken);
-  const user = claims ? mapClaimsToAuthUser(claims) : null;
-  if (!user) {
+  const baseUser = claims ? mapClaimsToAuthUser(claims) : null;
+  if (!baseUser) {
     logger.error("Unable to derive user profile from access token claims");
     return NextResponse.json({ message: "Unable to sign in. Please try again." }, { status: 502 });
   }
 
+  const resolvedUsername = username ?? baseUser.username;
+  const user = resolvedUsername ? { ...baseUser, username: resolvedUsername } : baseUser;
+
   await setAuthCookies(tokens.accessToken, tokens.refreshToken, computeAccessTokenMaxAge(claims));
+  if (resolvedUsername) {
+    await setUsernameCookie(resolvedUsername);
+  }
   return NextResponse.json({ user }, { status: 200 });
 }
 
@@ -70,7 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return await issueSession(tokens);
+    return await issueSession(tokens, extractUsername(response.data));
   } catch (error) {
     // Deliberately generic on auth failure: avoid user-enumeration by not
     // forwarding backend-specific details ("user not found" vs "wrong password").

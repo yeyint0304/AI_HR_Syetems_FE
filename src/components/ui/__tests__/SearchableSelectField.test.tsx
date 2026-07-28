@@ -177,4 +177,13 @@ describe("SearchableSelectField", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Select a user.");
     expect(screen.getByRole("combobox", { name: "User" })).toHaveAttribute("aria-invalid", "true");
   });
+
+  it("caps the listbox at a 400px max-height and keeps it vertically scrollable", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(screen.getByRole("combobox", { name: "User" }));
+
+    expect(screen.getByRole("listbox")).toHaveClass("max-h-[400px]", "overflow-y-auto");
+  });
 });
