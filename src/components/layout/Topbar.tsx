@@ -29,7 +29,10 @@ function getInitials(user: AuthUser | null): string {
 export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
   const pathname = usePathname();
   const trail = getBreadcrumbTrail(pathname ?? "/home");
-  const displayName = user?.firstName || user?.username || user?.email || "your account";
+  // Keep the topbar's identity in sync with the Sidebar footer card
+  // (`components/layout/Sidebar.tsx`): prefer `username`, falling back to the
+  // given name, then email.
+  const displayName = user?.username || user?.firstName || user?.email || "your account";
 
   return (
     <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">

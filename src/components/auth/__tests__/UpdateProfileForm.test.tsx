@@ -124,18 +124,19 @@ describe("UpdateProfileForm", () => {
     expect(apiClient.put).not.toHaveBeenCalled();
   });
 
-  it("submits updated values and shows a success message", async () => {
+  it("submits updated values and calls onSuccess", async () => {
     (apiClient.put as jest.Mock).mockResolvedValueOnce({
       data: { user: { ...initialValues, id: "1", role: "User", firstName: "Janet" } },
     });
+    const onSuccess = jest.fn();
     const user = userEvent.setup();
-    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} onSuccess={onSuccess} />);
 
     await user.clear(screen.getByLabelText(/first name/i));
     await user.type(screen.getByLabelText(/first name/i), "Janet");
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/profile has been updated/i);
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
     expect(apiClient.put).toHaveBeenCalledWith("/auth/profile", {
       firstName: "Janet",
       lastName: "Doe",
@@ -145,18 +146,34 @@ describe("UpdateProfileForm", () => {
     expect(mockRefresh).toHaveBeenCalled();
   });
 
-  it("shows the backend error message when the update fails", async () => {
+  it("shows the backend error message when the update fails, without calling onSuccess", async () => {
     (apiClient.put as jest.Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { data: { message: "Email is already in use." } },
     });
+    const onSuccess = jest.fn();
     const user = userEvent.setup();
-    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} onSuccess={onSuccess} />);
 
     await user.clear(screen.getByLabelText(/first name/i));
     await user.type(screen.getByLabelText(/first name/i), "Janet");
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/email is already in use/i);
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("omits the Cancel button when onCancel is not provided", () => {
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a Cancel button and calls onCancel when clicked", async () => {
+    const onCancel = jest.fn();
+    const user = userEvent.setup();
+    renderWithClient(<UpdateProfileForm initialValues={initialValues} onCancel={onCancel} />);
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

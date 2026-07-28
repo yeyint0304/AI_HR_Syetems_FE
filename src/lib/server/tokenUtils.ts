@@ -44,6 +44,34 @@ export function extractTokens(
   return { accessToken, refreshToken };
 }
 
+interface RawUserResponse {
+  Username?: string;
+  username?: string;
+}
+
+/**
+ * Extracts the backend-issued `Username` from a `Auth/Login` /
+ * `Auth/UpdateProfile` response body (enveloped or bare), tolerant of
+ * PascalCase/camelCase — mirrors `extractTokens`'s envelope-unwrapping. The
+ * real backend's access-token JWT never carries a username claim (see
+ * `lib/utils/jwt.ts`'s `CLAIM_KEYS` doc comment), so this is the only
+ * reliable source for `AuthUser.username` when talking to the real backend
+ * (`lib/server/authCookies.ts#setUsernameCookie`/`getCurrentAuthUser`).
+ * Returns `undefined` for a logical failure (`IsSuccess: false`), a
+ * non-object payload, or a missing/blank `Username` field.
+ */
+export function extractUsername(data: unknown): string | undefined {
+  const envelope = readBackendEnvelope(data);
+  if (!envelope.isSuccess) return undefined;
+
+  const unwrapped = envelope.data;
+  if (typeof unwrapped !== "object" || unwrapped === null) return undefined;
+
+  const raw = unwrapped as RawUserResponse;
+  const username = raw.Username ?? raw.username;
+  return typeof username === "string" && username.length > 0 ? username : undefined;
+}
+
 /** Derives a cookie `maxAge` (seconds) from the access token's `exp` claim. */
 export function computeAccessTokenMaxAge(claims: JwtClaims | null): number {
   if (!claims?.exp) return DEFAULT_ACCESS_TOKEN_MAX_AGE_SECONDS;

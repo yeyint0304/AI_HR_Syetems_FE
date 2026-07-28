@@ -47,7 +47,14 @@ function resolveActiveHref(pathname: string | null, hrefs: string[]): string | n
  */
 export function Sidebar({ user, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const displayName = user?.firstName || user?.username || user?.email || "Guest";
+  // Footer identity card shows the signed-in user's `username` (falling back
+  // to their given name, then email, only when `username` isn't available)
+  // paired with their `role`. The real backend's access-token JWT never
+  // carries a username claim (only `sub`/`email`/`name` — see
+  // `lib/utils/jwt.ts`'s `CLAIM_KEYS` doc comment), so `username` here relies
+  // on `getCurrentAuthUser()` overlaying the cached `USERNAME_COOKIE`
+  // (`lib/server/authCookies.ts`) populated at login/profile-update.
+  const displayName = user?.username || user?.firstName || user?.email || "Guest";
 
   const visibleSections = NAV_SECTIONS.filter(
     (section) => !section.requiredRole || user?.role === section.requiredRole

@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { computeAccessTokenMaxAge, extractTokens } from "@/lib/server/tokenUtils";
+import { computeAccessTokenMaxAge, extractTokens, extractUsername } from "@/lib/server/tokenUtils";
 import { DEFAULT_ACCESS_TOKEN_MAX_AGE_SECONDS } from "@/lib/constants/auth.constants";
 
 describe("extractTokens", () => {
@@ -64,6 +64,36 @@ describe("extractTokens", () => {
         Data: null,
       })
     ).toBeNull();
+  });
+});
+
+describe("extractUsername", () => {
+  it("extracts the PascalCase Username field nested under the Data envelope", () => {
+    expect(
+      extractUsername({
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: { UserId: "1", Username: "admin", Email: "admin@hrsystem.com" },
+      })
+    ).toBe("admin");
+  });
+
+  it("extracts a camelCase username as a fallback", () => {
+    expect(extractUsername({ username: "jane" })).toBe("jane");
+  });
+
+  it("returns undefined when the backend envelope reports a logical failure", () => {
+    expect(
+      extractUsername({ StatusCode: 401, IsSuccess: false, Message: "Invalid credentials.", Data: null })
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the field is missing, blank, or the payload isn't an object", () => {
+    expect(extractUsername({})).toBeUndefined();
+    expect(extractUsername({ Username: "" })).toBeUndefined();
+    expect(extractUsername(null)).toBeUndefined();
+    expect(extractUsername("not an object")).toBeUndefined();
   });
 });
 

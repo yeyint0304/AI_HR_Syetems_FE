@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { getAccessToken } from "@/lib/server/authCookies";
+import { getAccessToken, getCurrentAuthUser, setUsernameCookie } from "@/lib/server/authCookies";
 import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
 import { toBackendUpdateProfilePayload } from "@/lib/server/backendPayloadMappers";
+import { extractUsername } from "@/lib/server/tokenUtils";
 import { updateProfileSchema } from "@/lib/validators/auth.validators";
-import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 
 /**
  * PUT /api/auth/profile
@@ -25,8 +25,7 @@ export async function PUT(request: Request) {
     );
   }
 
-  const claims = decodeJwt(accessToken);
-  const currentUser = claims ? mapClaimsToAuthUser(claims) : null;
+  const currentUser = await getCurrentAuthUser();
   if (!currentUser) {
     return NextResponse.json(
       { message: "Your session is invalid. Please sign in again." },
@@ -53,11 +52,20 @@ export async function PUT(request: Request) {
   }
 
   try {
-    await backendApiClient.put(
+    const response = await backendApiClient.put(
       "/Auth/UpdateProfile",
       toBackendUpdateProfilePayload(parsed.data),
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
+
+    // `Auth/UpdateProfile`'s response body re-confirms `Username` (it never
+    // changes here — the form has no username field — but re-caching keeps
+    // the cookie fresh); fall back to the already-resolved `currentUser`
+    // value if the backend response is ever missing it.
+    const resolvedUsername = extractUsername(response.data) ?? currentUser.username;
+    if (resolvedUsername) {
+      await setUsernameCookie(resolvedUsername);
+    }
 
     const updatedUser = {
       ...currentUser,
@@ -65,6 +73,7 @@ export async function PUT(request: Request) {
       lastName: parsed.data.lastName,
       email: parsed.data.email,
       countryId: parsed.data.countryId || null,
+      username: resolvedUsername,
     };
 
     return NextResponse.json({ user: updatedUser }, { status: 200 });

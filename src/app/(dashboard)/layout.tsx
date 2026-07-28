@@ -1,13 +1,10 @@
 import { redirect } from "next/navigation";
-import { getAccessToken } from "@/lib/server/authCookies";
-import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
+import { getCurrentAuthUser } from "@/lib/server/authCookies";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { AuthStoreHydrator } from "@/components/providers/AuthStoreHydrator";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const accessToken = await getAccessToken();
-  const claims = accessToken ? decodeJwt(accessToken) : null;
-  const user = claims ? mapClaimsToAuthUser(claims) : null;
+  const user = await getCurrentAuthUser();
 
   // Defense-in-depth: `proxy.ts` already redirects unauthenticated requests,
   // but every protected layout/page re-checks per the Next.js auth guidance

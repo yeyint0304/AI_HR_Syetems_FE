@@ -5,12 +5,16 @@ import { cookies } from "next/headers";
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
+  USERNAME_COOKIE,
 } from "@/lib/constants/auth.constants";
 import {
   clearAuthCookies,
   getAccessToken,
+  getCurrentAuthUser,
   getRefreshToken,
+  getUsernameCookie,
   setAuthCookies,
+  setUsernameCookie,
 } from "@/lib/server/authCookies";
 
 const store = { set: jest.fn(), get: jest.fn(), delete: jest.fn() };
@@ -18,6 +22,20 @@ const store = { set: jest.fn(), get: jest.fn(), delete: jest.fn() };
 jest.mock("next/headers", () => ({
   cookies: jest.fn(),
 }));
+
+function buildToken(claims: Record<string, unknown>): string {
+  const base64Url = (value: string) =>
+    Buffer.from(value, "utf-8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  return [
+    base64Url(JSON.stringify({ alg: "none", typ: "JWT" })),
+    base64Url(JSON.stringify(claims)),
+    "sig",
+  ].join(".");
+}
 
 describe("authCookies", () => {
   beforeEach(() => {
@@ -100,9 +118,70 @@ describe("authCookies", () => {
     expect(await getRefreshToken()).toBeNull();
   });
 
-  it("clearAuthCookies deletes both cookies", async () => {
+  it("clearAuthCookies deletes the access, refresh, and username cookies", async () => {
     await clearAuthCookies();
     expect(store.delete).toHaveBeenCalledWith(ACCESS_TOKEN_COOKIE);
     expect(store.delete).toHaveBeenCalledWith(REFRESH_TOKEN_COOKIE);
+    expect(store.delete).toHaveBeenCalledWith(USERNAME_COOKIE);
+  });
+
+  it("setUsernameCookie sets the username cookie httpOnly with the refresh-token lifetime", async () => {
+    await setUsernameCookie("admin");
+    expect(store.set).toHaveBeenCalledWith(
+      USERNAME_COOKIE,
+      "admin",
+      expect.objectContaining({ httpOnly: true, sameSite: "strict", path: "/", maxAge: 7 * 24 * 60 * 60 })
+    );
+  });
+
+  it("getUsernameCookie returns the cookie value when present", async () => {
+    store.get.mockReturnValueOnce({ value: "admin" });
+    expect(await getUsernameCookie()).toBe("admin");
+    expect(store.get).toHaveBeenCalledWith(USERNAME_COOKIE);
+  });
+
+  it("getUsernameCookie returns null when the cookie is missing", async () => {
+    store.get.mockReturnValueOnce(undefined);
+    expect(await getUsernameCookie()).toBeNull();
+  });
+
+  describe("getCurrentAuthUser", () => {
+    it("returns null when there is no access token", async () => {
+      store.get.mockReturnValueOnce(undefined);
+      expect(await getCurrentAuthUser()).toBeNull();
+    });
+
+    it("returns the JWT-derived user as-is when the JWT already carries a username claim", async () => {
+      const token = buildToken({ sub: "1", email: "jane@example.com", unique_name: "jane", role: "Employee" });
+      store.get.mockReturnValueOnce({ value: token });
+
+      const user = await getCurrentAuthUser();
+      expect(user).toEqual(
+        expect.objectContaining({ id: "1", email: "jane@example.com", username: "jane", role: "Employee" })
+      );
+      // No extra cookie lookup needed once the JWT already has a username.
+      expect(store.get).toHaveBeenCalledTimes(1);
+    });
+
+    it("overlays the cached username cookie when the JWT has no username claim", async () => {
+      const token = buildToken({ sub: "1", email: "jane@example.com", role: "Employee" });
+      store.get.mockReturnValueOnce({ value: token }).mockReturnValueOnce({ value: "jane.doe" });
+
+      const user = await getCurrentAuthUser();
+      expect(user).toEqual(expect.objectContaining({ username: "jane.doe" }));
+    });
+
+    it("leaves username undefined when neither the JWT nor the cookie has one", async () => {
+      const token = buildToken({ sub: "1", email: "jane@example.com", role: "Employee" });
+      store.get.mockReturnValueOnce({ value: token }).mockReturnValueOnce(undefined);
+
+      const user = await getCurrentAuthUser();
+      expect(user?.username).toBeUndefined();
+    });
+
+    it("returns null when the access token can't be decoded into a user", async () => {
+      store.get.mockReturnValueOnce({ value: "not-a-valid-jwt" });
+      expect(await getCurrentAuthUser()).toBeNull();
+    });
   });
 });

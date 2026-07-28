@@ -16,13 +16,16 @@ import { useCountryList } from "@/hooks/useCountries";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import type { AuthUser } from "@/types/auth.types";
 
-interface UpdateProfileFormProps {
+export interface UpdateProfileFormProps {
   initialValues: Pick<AuthUser, "firstName" | "lastName" | "email" | "countryId">;
+  /** Called after a successful save — e.g. so the hosting `Modal` (`ProfileView`) can close and surface its own confirmation. */
+  onSuccess?: () => void;
+  /** Renders a "Cancel" button next to "Save changes" when provided — matching `EditUserForm`'s modal button row. */
+  onCancel?: () => void;
 }
 
-export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
+export function UpdateProfileForm({ initialValues, onSuccess, onCancel }: UpdateProfileFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const updateProfileMutation = useUpdateProfile();
   const {
     data: countries,
@@ -49,14 +52,11 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
 
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
-    setSuccessMessage(null);
     updateProfileMutation.mutate(
       { ...values, countryId: values.countryId || null },
       {
         onSuccess: () => {
-          setSuccessMessage(
-            "Your profile has been updated. Name changes will be reflected the next time you sign in."
-          );
+          onSuccess?.();
         },
         onError: (error) => {
           setFormError(
@@ -70,7 +70,6 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
   return (
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
       {formError && <Alert variant="error">{formError}</Alert>}
-      {successMessage && <Alert variant="success">{successMessage}</Alert>}
       {isCountriesError && (
         <Alert variant="error">
           {getApiErrorMessage(countriesError, "Unable to load countries.")}{" "}
@@ -115,7 +114,12 @@ export function UpdateProfileForm({ initialValues }: UpdateProfileFormProps) {
         )}
       />
 
-      <div>
+      <div className="flex justify-end gap-3">
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button type="submit" isLoading={updateProfileMutation.isPending} disabled={!isDirty}>
           Save changes
         </Button>
