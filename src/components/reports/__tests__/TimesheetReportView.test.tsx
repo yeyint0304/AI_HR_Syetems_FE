@@ -185,9 +185,14 @@ describe("TimesheetReportView", () => {
     await user.click(screen.getByRole("button", { name: /apply filters/i }));
     await screen.findByRole("table");
 
+    expect(screen.getByRole("navigation", { name: /timesheet report pagination/i })).toBeInTheDocument();
     expect(screen.getByText(/page 1 of 2/i)).toBeInTheDocument();
     const nextButton = screen.getByRole("button", { name: /^next$/i });
-    expect(screen.getByRole("button", { name: /^previous$/i })).toBeDisabled();
+    // `TablePagination` (`react-paginate`-backed) renders Previous/Next as
+    // `<a role="button">` elements carrying `aria-disabled` rather than a
+    // native `disabled` attribute — jest-dom's `toBeDisabled()` only
+    // recognizes real form controls, so assert against `aria-disabled`.
+    expect(screen.getByRole("button", { name: /^previous$/i })).toHaveAttribute("aria-disabled", "true");
 
     await user.click(nextButton);
 

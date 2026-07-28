@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MyTimesheetView } from "@/components/timesheets/MyTimesheetView";
@@ -500,6 +500,46 @@ describe("MyTimesheetView", () => {
   // deleting an approved entry (409 "Approved timesheet entries cannot be
   // deleted."), so this should surface as a save failure rather than
   // silently succeeding or crashing.
+  // `bugs/paginations`: "add pagination UI to all tables where pagination is
+  // currently missing... My Timesheet" — the weekly grid's project rows are
+  // paginated client-side once a user is assigned to more projects than fit
+  // on one page, matching every other reference-data table's convention
+  // (`components/ui/TablePagination.tsx`).
+  it("paginates the weekly grid's project rows, keeping the daily total across every assigned project regardless of the visible page", async () => {
+    const manyProjects = Array.from({ length: 21 }, (_, index) => ({
+      ...PROJECT,
+      id: `project-${index}`,
+      code: `PRJ-${index}`,
+      name: `Project ${index}`,
+    }));
+    const entries = manyProjects.map((project, index) => ({
+      ...MONDAY_ENTRY,
+      id: `entry-${index}`,
+      projectId: project.id,
+      hours: 1,
+    }));
+    mockApi({ projects: manyProjects, entries });
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    await screen.findByText("Project 0");
+    expect(screen.queryByText("Project 20")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: /my timesheets projects pagination/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+    // Monday's daily total reflects all 21 assigned projects (21h), not just
+    // the 20 visible on this page.
+    expect(screen.getAllByText("21h").length).toBeGreaterThan(0);
+
+    const paginationNav = screen.getByRole("navigation", { name: /my timesheets projects pagination/i });
+    await user.click(within(paginationNav).getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Project 20")).toBeInTheDocument();
+    expect(screen.queryByText("Project 0")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+  });
+
   it("surfaces a failure (rather than silently succeeding) when clearing today's already-approved entry, since deleting an approved entry is still rejected server-side", async () => {
     const todaysApprovedEntry = { ...APPROVED_ENTRY, entryDate: "2025-01-06" };
     mockApi({ entries: [todaysApprovedEntry] });
