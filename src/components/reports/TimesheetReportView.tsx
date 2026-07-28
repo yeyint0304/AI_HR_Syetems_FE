@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { TextField } from "@/components/ui/TextField";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectList } from "@/hooks/useProjects";
@@ -60,6 +61,14 @@ function toAppliedFilters(draft: DraftFilters, page: number): TimesheetReportFil
  * separate, not-yet-implemented Administration module — see
  * `lib/constants/navigation.constants.ts`), so this intentionally accepts a
  * raw User ID (GUID) rather than a fabricated dropdown.
+ *
+ * Like `InvoicesListView`, this report's rows are paginated server-side
+ * (`page`/`pageSize` round-trip to `Report/GenerateTimesheetReport` via
+ * `goToPage`/`appliedFilters` below) rather than via
+ * `hooks/useTablePagination.ts`'s client-side slicing, but per the
+ * `bugs/paginations` feature request the Previous/Next/page-number controls
+ * themselves render through the same shared, `react-paginate`-backed
+ * `components/ui/TablePagination.tsx` every other list view uses.
  */
 export function TimesheetReportView() {
   const { user } = useAuth();
@@ -74,7 +83,6 @@ export function TimesheetReportView() {
     isApproved: "",
   });
   const [appliedFilters, setAppliedFilters] = useState<TimesheetReportFilters | null>(null);
-  const [page, setPage] = useState(1);
   const [filterError, setFilterError] = useState<string | null>(null);
 
   const { data: projects, isLoading: isProjectsLoading } = useProjectList();
@@ -105,7 +113,6 @@ export function TimesheetReportView() {
       setFilterError("User ID must be a valid GUID.");
       return;
     }
-    setPage(1);
     setAppliedFilters(toAppliedFilters(draftFilters, 1));
   }
 
@@ -118,13 +125,11 @@ export function TimesheetReportView() {
       userId: "",
       isApproved: "",
     });
-    setPage(1);
     setAppliedFilters(null);
   }
 
   function goToPage(nextPage: number) {
     if (!appliedFilters) return;
-    setPage(nextPage);
     setAppliedFilters({ ...appliedFilters, page: nextPage });
   }
 
@@ -289,29 +294,13 @@ export function TimesheetReportView() {
             </div>
           </div>
 
-          {totalPages > 1 && (
-            <nav aria-label="Timesheet report pagination" className="flex items-center justify-between">
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={page <= 1 || isReportFetching}
-                onClick={() => goToPage(page - 1)}
-              >
-                Previous
-              </Button>
-              <p className="text-sm text-slate-500">
-                Page {report.page} of {totalPages}
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={page >= totalPages || isReportFetching}
-                onClick={() => goToPage(page + 1)}
-              >
-                Next
-              </Button>
-            </nav>
-          )}
+          <TablePagination
+            page={report.page}
+            totalPages={totalPages}
+            onPageChange={goToPage}
+            isDisabled={isReportFetching}
+            label="Timesheet report pagination"
+          />
         </>
       )}
     </div>

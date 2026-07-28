@@ -6,6 +6,7 @@ import { Download, Eye } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
+import { TablePagination } from "@/components/ui/TablePagination";
 import { TextField } from "@/components/ui/TextField";
 import { useProjectList } from "@/hooks/useProjects";
 import { useInvoiceList } from "@/hooks/useInvoices";
@@ -47,6 +48,15 @@ function formatMoney(value: number, symbol: string | undefined): string {
  * `useInvoiceList` call (capped at 100 rows, since `Invoice/GetAllInvoices`
  * has no dedicated "counts by status" endpoint) so the counts stay accurate
  * even while the table itself is filtered to a single status.
+ *
+ * Unlike the reference-data tables (`CountriesListView`, `CurrenciesListView`,
+ * etc.), this table's rows are paginated server-side — `page`/`pageSize` are
+ * sent straight through to `Invoice/GetAllInvoices` via `tableFilters` below
+ * — rather than via `hooks/useTablePagination.ts`'s client-side slicing. Per
+ * the `bugs/paginations` feature request, the Previous/Next/page-number
+ * controls themselves still render through the shared
+ * `components/ui/TablePagination.tsx` (`react-paginate`-backed), the same
+ * component every other list view in this app uses.
  */
 export function InvoicesListView() {
   const [draftFilters, setDraftFilters] = useState<DraftFilters>(EMPTY_DRAFT_FILTERS);
@@ -285,28 +295,14 @@ export function InvoicesListView() {
         )}
       </div>
 
-      {invoiceList && totalPages > 1 && (
-        <nav aria-label="Invoices pagination" className="flex items-center justify-between">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={page <= 1 || isFetching}
-            onClick={() => setPage((prev) => prev - 1)}
-          >
-            Previous
-          </Button>
-          <p className="text-sm text-slate-500">
-            Page {invoiceList.page} of {totalPages}
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={page >= totalPages || isFetching}
-            onClick={() => setPage((prev) => prev + 1)}
-          >
-            Next
-          </Button>
-        </nav>
+      {invoiceList && (
+        <TablePagination
+          page={invoiceList.page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          isDisabled={isFetching}
+          label="Invoices pagination"
+        />
       )}
     </div>
   );

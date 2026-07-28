@@ -192,4 +192,28 @@ describe("InvoicesListView", () => {
 
     expect(screen.getByLabelText(/date from/i)).toHaveValue("");
   });
+
+  // `bugs/paginations`: "add pagination UI to all tables where pagination is
+  // currently missing... Invoice" — the invoice table's rows are paginated
+  // server-side, but the Previous/Next/page-number controls render through
+  // the same shared, `react-paginate`-backed `components/ui/TablePagination.tsx`
+  // every other list view in this app uses.
+  it("shows pagination controls and requests the next page when there are more invoices than fit on one page", async () => {
+    mockGetResponses({ totalCount: 25 });
+    const user = userEvent.setup();
+    renderWithClient(<InvoicesListView />);
+
+    await screen.findByText("INV-0001");
+    expect(screen.getByRole("navigation", { name: /invoices pagination/i })).toBeInTheDocument();
+    expect(screen.getByText(/page 1 of 2/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith(
+        "/invoices",
+        expect.objectContaining({ params: expect.objectContaining({ page: 2 }) })
+      )
+    );
+  });
 });
