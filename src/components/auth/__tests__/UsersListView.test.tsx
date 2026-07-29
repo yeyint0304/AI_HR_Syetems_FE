@@ -198,4 +198,52 @@ describe("UsersListView", () => {
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
+
+  it("opens the Reset password modal for the selected row, submits it, and shows a success confirmation", async () => {
+    mockUsersResponse();
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { message: "Password reset successfully." },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    expect(row).not.toBeNull();
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /reset password/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: /reset password/i });
+    expect(within(dialog).getByText("Tester1 Sample")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^new password$/i), "NewPass1!");
+    await user.type(screen.getByLabelText(/^confirm new password$/i), "NewPass1!");
+    await user.click(within(dialog).getByRole("button", { name: /^reset password$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith("/auth/users/u2/reset-password", {
+        newPassword: "NewPass1!",
+        confirmNewPassword: "NewPass1!",
+      })
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /tester's password has been reset successfully/i
+    );
+  });
+
+  it("closes the Reset password modal via Cancel without submitting", async () => {
+    mockUsersResponse();
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /reset password/i }));
+
+    await screen.findByRole("dialog", { name: /reset password/i });
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
 });

@@ -99,6 +99,29 @@ describe("ProfileView", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("status")).toHaveTextContent(/profile has been updated/i);
-    expect(mockRefresh).toHaveBeenCalled();
+    // No server refresh needed — see `hooks/useAuth.ts#useUpdateProfile`'s
+    // doc comment on why forcing one would risk reverting this update.
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it("immediately reflects the updated name/email in the summary, without needing a sign-in/refresh", async () => {
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { user: { ...user, firstName: "Janet", email: "janet@example.com" } },
+    });
+    const uiUser = userEvent.setup();
+    renderWithClient(<ProfileView user={user} />);
+
+    await uiUser.click(screen.getByRole("button", { name: /edit profile/i }));
+    const firstNameField = screen.getByLabelText(/first name/i);
+    await uiUser.clear(firstNameField);
+    await uiUser.type(firstNameField, "Janet");
+    const emailField = screen.getByLabelText(/email address/i);
+    await uiUser.clear(emailField);
+    await uiUser.type(emailField, "janet@example.com");
+    await uiUser.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(screen.getByText("Janet Doe")).toBeInTheDocument());
+    expect(screen.getByText("janet@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("Jane Doe")).not.toBeInTheDocument();
   });
 });

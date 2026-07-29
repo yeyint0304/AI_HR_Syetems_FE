@@ -64,6 +64,16 @@ const CLAIM_KEYS = {
   email: ["email", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"],
   firstName: ["given_name", "firstName", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"],
   lastName: ["family_name", "lastName", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"],
+  /**
+   * The real backend's access token carries the user's display name as a
+   * single `name` claim (e.g. `"System Admin"`, `"Lin Thit Htoo"` — see the
+   * saved `Auth/Login` example in `docs/HR_System_BE.postman_collection.json`)
+   * rather than separate `given_name`/`family_name` claims. `mapClaimsToAuthUser`
+   * only falls back to splitting this when neither `firstName` nor `lastName`
+   * claims are present, so mock-auth tokens (`lib/server/mockAuth.ts`, which do
+   * carry `given_name`/`family_name`) are unaffected.
+   */
+  fullName: ["name"],
   role: ["role", "roles", "Role", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"],
   countryId: ["countryId", "CountryId"],
 } as const;
@@ -75,6 +85,21 @@ function firstClaimValue(claims: JwtClaims, keys: readonly string[]): string | u
     if (Array.isArray(value) && typeof value[0] === "string") return value[0];
   }
   return undefined;
+}
+
+/**
+ * Best-effort split of a single "full name" claim value (e.g. `"System
+ * Admin"`, `"Lin Thit Htoo"`) into `firstName`/`lastName` — the first
+ * whitespace-separated word becomes `firstName`, everything after it becomes
+ * `lastName` (so multi-word last names like "Htoo edited" stay together).
+ * Only ever used as a fallback (see {@link CLAIM_KEYS.fullName}'s doc
+ * comment) when the token has no dedicated given/family name claims, so this
+ * is purely a display-name heuristic — never relied on for anything
+ * security-sensitive.
+ */
+function splitFullName(fullName: string): { firstName?: string; lastName?: string } {
+  const [firstName, ...rest] = fullName.trim().split(/\s+/).filter(Boolean);
+  return { firstName, lastName: rest.length > 0 ? rest.join(" ") : undefined };
 }
 
 /**
@@ -91,12 +116,23 @@ export function mapClaimsToAuthUser(
 
   if (!id || !email || !role) return null;
 
+  let firstName = firstClaimValue(claims, CLAIM_KEYS.firstName);
+  let lastName = firstClaimValue(claims, CLAIM_KEYS.lastName);
+  if (!firstName && !lastName) {
+    const fullName = firstClaimValue(claims, CLAIM_KEYS.fullName);
+    if (fullName) {
+      const split = splitFullName(fullName);
+      firstName = split.firstName;
+      lastName = split.lastName;
+    }
+  }
+
   return {
     id,
     email,
     username: firstClaimValue(claims, CLAIM_KEYS.username),
-    firstName: firstClaimValue(claims, CLAIM_KEYS.firstName),
-    lastName: firstClaimValue(claims, CLAIM_KEYS.lastName),
+    firstName,
+    lastName,
     role,
     countryId: firstClaimValue(claims, CLAIM_KEYS.countryId) ?? null,
   };

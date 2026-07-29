@@ -18,8 +18,13 @@ import type { AuthUser } from "@/types/auth.types";
 
 export interface UpdateProfileFormProps {
   initialValues: Pick<AuthUser, "firstName" | "lastName" | "email" | "countryId">;
-  /** Called after a successful save — e.g. so the hosting `Modal` (`ProfileView`) can close and surface its own confirmation. */
-  onSuccess?: () => void;
+  /**
+   * Called with the backend's updated `AuthUser` after a successful save —
+   * so the hosting `Modal` (`ProfileView`) can close, refresh its own
+   * displayed summary from this authoritative response, and surface its own
+   * confirmation, instead of waiting for a fresh sign-in.
+   */
+  onSuccess?: (user: AuthUser) => void;
   /** Renders a "Cancel" button next to "Save changes" when provided — matching `EditUserForm`'s modal button row. */
   onCancel?: () => void;
 }
@@ -55,8 +60,8 @@ export function UpdateProfileForm({ initialValues, onSuccess, onCancel }: Update
     updateProfileMutation.mutate(
       { ...values, countryId: values.countryId || null },
       {
-        onSuccess: () => {
-          onSuccess?.();
+        onSuccess: (updatedUser) => {
+          onSuccess?.(updatedUser);
         },
         onError: (error) => {
           setFormError(

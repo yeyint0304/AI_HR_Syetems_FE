@@ -5,6 +5,7 @@ import type {
   CreateUserRequest,
   CreateUserResult,
   LoginRequest,
+  ResetPasswordRequest,
   Role,
   UnassignedUserListParams,
   UnassignedUserPage,
@@ -99,4 +100,23 @@ export async function updateUserRequest(
 ): Promise<UserListItem> {
   const { data } = await apiClient.put<{ data: UserListItem }>(`/auth/users/${id}`, payload);
   return data.data;
+}
+
+/**
+ * Resets another user's password, backing the "Reset password" action on
+ * the `/admin/users` "User Management" table
+ * (`components/auth/ResetUserPasswordForm.tsx`). Proxies through this app's
+ * own `/api/auth/users/[id]/reset-password` Route Handler, which in turn
+ * calls the backend's `Auth/ResetPassword/{id}` endpoint (see
+ * `app/api/auth/users/[id]/reset-password/route.ts`).
+ */
+export async function resetUserPasswordRequest(
+  id: string,
+  payload: ResetPasswordRequest
+): Promise<{ message: string }> {
+  const { data } = await apiClient.put<{ message: string }>(
+    `/auth/users/${id}/reset-password`,
+    payload
+  );
+  return data;
 }

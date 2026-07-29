@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { KeyRound, Pencil } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { Modal } from "@/components/ui/Modal";
 import { EditUserForm } from "@/components/auth/EditUserForm";
+import { ResetUserPasswordForm } from "@/components/auth/ResetUserPasswordForm";
 import { useUserList } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useTablePagination } from "@/hooks/useTablePagination";
@@ -61,11 +62,20 @@ function summarizeByRole(users: UserListItem[]): { roleName: string; count: numb
  * exposes no "get user by id" endpoint to hydrate a standalone edit page
  * with (only `Auth/GetUserList`/`Auth/SearchUsers`); the modal reuses the
  * row data this list has already fetched instead.
+ *
+ * "Reset password" is a second per-row action, opening its own modal
+ * (`components/auth/ResetUserPasswordForm.tsx`) backed by
+ * `Auth/ResetPassword/{id}` — a SystemAdmin-only escalation path for setting
+ * another user's password without knowing their current one, distinct from
+ * the self-service "Change password" screen (`/profile/change-password`,
+ * which requires the caller's own current password).
  */
 export function UsersListView() {
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [userBeingEdited, setUserBeingEdited] = useState<UserListItem | null>(null);
+  const [userBeingReset, setUserBeingReset] = useState<UserListItem | null>(null);
+  const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
 
   const {
     data: userPage,
@@ -97,6 +107,8 @@ export function UsersListView() {
           + Add User
         </Link>
       </div>
+
+      {resetSuccessMessage && <Alert variant="success">{resetSuccessMessage}</Alert>}
 
       {roleSummary.length > 0 && (
         <div className="flex flex-wrap gap-2" aria-label="User counts by role">
@@ -202,7 +214,7 @@ export function UsersListView() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-3">
                           <button
                             type="button"
                             onClick={() => setUserBeingEdited(user)}
@@ -210,6 +222,17 @@ export function UsersListView() {
                           >
                             <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
                             Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetSuccessMessage(null);
+                              setUserBeingReset(user);
+                            }}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                          >
+                            <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
+                            Reset password
                           </button>
                         </div>
                       </td>
@@ -235,6 +258,25 @@ export function UsersListView() {
             user={userBeingEdited}
             onSuccess={() => setUserBeingEdited(null)}
             onCancel={() => setUserBeingEdited(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={userBeingReset !== null}
+        title="Reset password"
+        description="Set a new password for this user without needing their current one."
+        onClose={() => setUserBeingReset(null)}
+      >
+        {userBeingReset && (
+          <ResetUserPasswordForm
+            userId={userBeingReset.id}
+            userLabel={`${userBeingReset.firstName} ${userBeingReset.lastName}`.trim() || userBeingReset.username}
+            onSuccess={() => {
+              setUserBeingReset(null);
+              setResetSuccessMessage(`${userBeingReset.username}'s password has been reset successfully.`);
+            }}
+            onCancel={() => setUserBeingReset(null)}
           />
         )}
       </Modal>

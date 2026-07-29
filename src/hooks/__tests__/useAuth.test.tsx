@@ -7,6 +7,7 @@ import {
   useCreateUser,
   useLogin,
   useLogout,
+  useResetUserPassword,
   useRoles,
   useUnassignedUsersInfinite,
   useUpdateProfile,
@@ -20,6 +21,7 @@ import {
   getUnassignedUsersRequest,
   loginRequest,
   logoutRequest,
+  resetUserPasswordRequest,
   updateProfileRequest,
   updateUserRequest,
 } from "@/lib/api/auth.api";
@@ -35,6 +37,7 @@ jest.mock("@/lib/api/auth.api", () => ({
   getRolesRequest: jest.fn(),
   getUnassignedUsersRequest: jest.fn(),
   updateUserRequest: jest.fn(),
+  resetUserPasswordRequest: jest.fn(),
 }));
 
 const mockReplace = jest.fn();
@@ -139,7 +142,7 @@ describe("useUpdateProfile", () => {
     useAuthStore.setState({ user: sampleUser });
   });
 
-  it("stores the updated user and refreshes on success", async () => {
+  it("stores the updated user immediately without forcing a server refresh", async () => {
     const updatedUser = { ...sampleUser, firstName: "Janet" };
     (updateProfileRequest as jest.Mock).mockResolvedValueOnce(updatedUser);
     const { result } = renderHook(() => useUpdateProfile(), { wrapper: withQueryClient() });
@@ -148,8 +151,33 @@ describe("useUpdateProfile", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(useAuthStore.getState().user).toEqual(updatedUser);
-    expect(mockRefresh).toHaveBeenCalled();
+    // No `router.refresh()` — a server round-trip would only re-decode the
+    // (unchanged) JWT and could clobber this optimistic update; see the
+    // hook's doc comment in `hooks/useAuth.ts`.
+    expect(mockRefresh).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+
+describe("useResetUserPassword", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resets the given user's password and resolves with the backend's confirmation message", async () => {
+    (resetUserPasswordRequest as jest.Mock).mockResolvedValueOnce({
+      message: "Password reset successfully.",
+    });
+    const { result } = renderHook(() => useResetUserPassword("user-1"), {
+      wrapper: withQueryClient(),
+    });
+
+    result.current.mutate({ newPassword: "New1!aaaa", confirmNewPassword: "New1!aaaa" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ message: "Password reset successfully." });
+    expect(resetUserPasswordRequest).toHaveBeenCalledWith("user-1", {
+      newPassword: "New1!aaaa",
+      confirmNewPassword: "New1!aaaa",
+    });
   });
 });
 

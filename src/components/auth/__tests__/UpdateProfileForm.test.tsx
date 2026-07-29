@@ -124,10 +124,9 @@ describe("UpdateProfileForm", () => {
     expect(apiClient.put).not.toHaveBeenCalled();
   });
 
-  it("submits updated values and calls onSuccess", async () => {
-    (apiClient.put as jest.Mock).mockResolvedValueOnce({
-      data: { user: { ...initialValues, id: "1", role: "User", firstName: "Janet" } },
-    });
+  it("submits updated values and calls onSuccess with the backend's updated user", async () => {
+    const updatedUser = { ...initialValues, id: "1", role: "User", firstName: "Janet" };
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { user: updatedUser } });
     const onSuccess = jest.fn();
     const user = userEvent.setup();
     renderWithClient(<UpdateProfileForm initialValues={initialValues} onSuccess={onSuccess} />);
@@ -137,13 +136,16 @@ describe("UpdateProfileForm", () => {
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess).toHaveBeenCalledWith(updatedUser);
     expect(apiClient.put).toHaveBeenCalledWith("/auth/profile", {
       firstName: "Janet",
       lastName: "Doe",
       email: "jane@example.com",
       countryId: null,
     });
-    expect(mockRefresh).toHaveBeenCalled();
+    // No server refresh — the returned user is written straight into the
+    // auth store instead (`hooks/useAuth.ts#useUpdateProfile`).
+    expect(mockRefresh).not.toHaveBeenCalled();
   });
 
   it("shows the backend error message when the update fails, without calling onSuccess", async () => {

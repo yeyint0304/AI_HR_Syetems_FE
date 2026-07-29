@@ -164,19 +164,25 @@ describe("Sidebar", () => {
     expect(screen.getByText("Administration")).toBeInTheDocument();
   });
 
-  it("renders the signed-in user's name, role, and a sign-out control", () => {
+  it("renders the signed-in user's full name, role, and a sign-out control", () => {
     renderSidebar(projectAdminUser);
 
-    expect(screen.getByText("Sarah")).toBeInTheDocument();
+    expect(screen.getByText("Sarah Chen")).toBeInTheDocument();
     expect(screen.getByText("ProjectAdmin")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it("prefers the username over the given name and email in the footer card", () => {
+  it("prefers the full name over the username and email in the footer card", () => {
     renderSidebar({ ...projectAdminUser, username: "sarah.chen" });
 
+    expect(screen.getByText("Sarah Chen")).toBeInTheDocument();
+    expect(screen.queryByText("sarah.chen")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the username in the footer card when no name is available", () => {
+    renderSidebar({ id: "3", email: "sarah@hrsystem.com", username: "sarah.chen", role: "ProjectAdmin" });
+
     expect(screen.getByText("sarah.chen")).toBeInTheDocument();
-    expect(screen.queryByText("Sarah")).not.toBeInTheDocument();
   });
 
   it("invokes onNavigate when a real nav link is clicked", async () => {

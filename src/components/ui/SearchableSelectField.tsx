@@ -222,7 +222,7 @@ export function SearchableSelectField({
             id={listboxId}
             aria-label={label}
             onScroll={handleScroll}
-            className="max-h-[400px] overflow-y-auto py-1"
+            className="max-h-[300px] overflow-y-auto py-1"
           >
             {isLoading ? (
               <li className="px-3 py-2 text-sm text-slate-500" role="status">

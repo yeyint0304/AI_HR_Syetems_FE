@@ -35,6 +35,20 @@ export interface ChangePasswordRequest {
   confirmNewPassword: string;
 }
 
+/**
+ * Payload for `PUT /api/auth/users/{id}/reset-password` (backend
+ * `Auth/ResetPassword/{id}`), backing the `/admin/users` "Reset password"
+ * action (`components/auth/ResetUserPasswordForm.tsx`). Unlike
+ * {@link ChangePasswordRequest} (self-service, requires the caller's own
+ * *current* password), this is a SystemAdmin-only escalation path that sets
+ * another user's password without knowing their old one — per the saved
+ * "Reset Password" example in `docs/HR_System_BE.postman_collection.json`.
+ */
+export interface ResetPasswordRequest {
+  newPassword: string;
+  confirmNewPassword: string;
+}
+
 export interface CreateUserRequest {
   username: string;
   email: string;

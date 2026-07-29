@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
+import { UserMenu } from "@/components/layout/UserMenu";
 import { getBreadcrumbTrail } from "@/lib/constants/navigation.constants";
 import type { AuthUser } from "@/types/auth.types";
 
@@ -12,27 +13,15 @@ interface TopbarProps {
   onOpenMobileNav: () => void;
 }
 
-function getInitials(user: AuthUser | null): string {
-  if (!user) return "?";
-  const first = user.firstName?.[0] ?? user.username?.[0] ?? user.email?.[0] ?? "";
-  const last = user.lastName?.[0] ?? "";
-  const initials = `${first}${last}`.trim();
-  return initials ? initials.toUpperCase() : "U";
-}
-
 /**
  * Light top bar shown above the page content: breadcrumb (full ancestor
  * trail, e.g. "Dashboard / Projects / New project") on the left, mobile nav
- * toggle, and a profile-link avatar on the right — per the wireframe
- * (`docs/HR_System_FE_wireframe.pdf`).
+ * toggle, and an account dropdown (`UserMenu`) on the right — per the
+ * wireframe's header icon + dropdown (`docs/HR_System_FE_wireframe.pdf`).
  */
 export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
   const pathname = usePathname();
   const trail = getBreadcrumbTrail(pathname ?? "/home");
-  // Keep the topbar's identity in sync with the Sidebar footer card
-  // (`components/layout/Sidebar.tsx`): prefer `username`, falling back to the
-  // given name, then email.
-  const displayName = user?.username || user?.firstName || user?.email || "your account";
 
   return (
     <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">
@@ -80,15 +69,7 @@ export function Topbar({ user, onOpenMobileNav }: TopbarProps) {
         </nav>
       </div>
 
-      {user && (
-        <Link
-          href="/profile"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-          aria-label={`View profile for ${displayName}`}
-        >
-          {getInitials(user)}
-        </Link>
-      )}
+      {user && <UserMenu user={user} />}
     </header>
   );
 }

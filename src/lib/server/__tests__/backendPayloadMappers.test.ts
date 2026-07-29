@@ -12,6 +12,7 @@ import {
   toBackendLoginPayload,
   toBackendLogoutPayload,
   toBackendRefreshTokenPayload,
+  toBackendResetPasswordPayload,
   toBackendUpdateExchangeRatePayload,
   toBackendUpdateProfilePayload,
   toBackendUpdateProjectPayload,
@@ -74,6 +75,18 @@ describe("backendPayloadMappers", () => {
       })
     ).toEqual({
       CurrentPassword: "Old1!aaaa",
+      NewPassword: "New1!aaaa",
+      ConfirmNewPassword: "New1!aaaa",
+    });
+  });
+
+  it("maps a reset-password payload to PascalCase, without a CurrentPassword field", () => {
+    expect(
+      toBackendResetPasswordPayload({
+        newPassword: "New1!aaaa",
+        confirmNewPassword: "New1!aaaa",
+      })
+    ).toEqual({
       NewPassword: "New1!aaaa",
       ConfirmNewPassword: "New1!aaaa",
     });

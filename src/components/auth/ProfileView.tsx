@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { UpdateProfileForm } from "@/components/auth/UpdateProfileForm";
 import { useCountryList } from "@/hooks/useCountries";
+import { getFullName } from "@/lib/utils/userDisplay";
 import type { AuthUser } from "@/types/auth.types";
 
 export interface ProfileViewProps {
@@ -28,7 +29,13 @@ export interface ProfileViewProps {
  * `FirstName`/`LastName`/`Email`/`CountryId`), so it's only ever shown, never
  * editable.
  */
-export function ProfileView({ user }: ProfileViewProps) {
+export function ProfileView({ user: initialUser }: ProfileViewProps) {
+  // Local state, seeded from the server-rendered `user` prop but overwritten
+  // with the backend's response as soon as a save succeeds — so this summary
+  // (and, via `UpdateProfileForm.onSuccess` -> `useUpdateProfile`, the
+  // Sidebar/Topbar too) reflects an edited name/email/country immediately,
+  // rather than only "the next time you sign in".
+  const [user, setDisplayedUser] = useState(initialUser);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { data: countries } = useCountryList();
@@ -39,18 +46,17 @@ export function ProfileView({ user }: ProfileViewProps) {
     return match ? `${match.name} (${match.code})` : "Not set";
   }, [countries, user.countryId]);
 
-  const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.username || "—";
+  const fullName = getFullName(user) || "—";
 
   function openEditModal() {
     setSuccessMessage(null);
     setIsEditOpen(true);
   }
 
-  function handleEditSuccess() {
+  function handleEditSuccess(updatedUser: AuthUser) {
+    setDisplayedUser((current) => ({ ...current, ...updatedUser }));
     setIsEditOpen(false);
-    setSuccessMessage(
-      "Your profile has been updated. Name changes will be reflected the next time you sign in."
-    );
+    setSuccessMessage("Your profile has been updated.");
   }
 
   return (

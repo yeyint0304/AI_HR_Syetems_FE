@@ -48,6 +48,23 @@ export const changePasswordSchema = z
   });
 export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
+/**
+ * Backs `ResetUserPasswordForm` (the `/admin/users` "Reset password" modal).
+ * Unlike `changePasswordSchema`, there is no `currentPassword` field —
+ * `Auth/ResetPassword/{id}` is a SystemAdmin-only action that sets another
+ * user's password without knowing (or needing) their old one.
+ */
+export const resetPasswordSchema = z
+  .object({
+    newPassword: passwordRules,
+    confirmNewPassword: z.string().min(1, "Please confirm the new password."),
+  })
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmNewPassword"],
+  });
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
 export const createUserSchema = z.object({
   username: z.string().trim().min(3, "Username must be at least 3 characters.").max(50, "Username is too long."),
   email: z.email("Enter a valid email address."),

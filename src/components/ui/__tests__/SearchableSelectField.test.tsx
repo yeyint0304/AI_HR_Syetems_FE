@@ -42,13 +42,13 @@ describe("SearchableSelectField", () => {
     expect(screen.getByRole("option", { name: /alex doe/i })).toBeInTheDocument();
   });
 
-  it("caps the opened listbox at a 400px max-height and keeps it scrollable", async () => {
+  it("caps the opened listbox at a 300px max-height and keeps it scrollable", async () => {
     const user = userEvent.setup();
     setup();
 
     await user.click(screen.getByRole("combobox", { name: "User" }));
 
-    expect(screen.getByRole("listbox")).toHaveClass("max-h-[400px]", "overflow-y-auto");
+    expect(screen.getByRole("listbox")).toHaveClass("max-h-[300px]", "overflow-y-auto");
   });
 
   it("calls onSelect and closes the list when an option is clicked", async () => {

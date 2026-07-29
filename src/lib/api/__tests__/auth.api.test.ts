@@ -6,6 +6,7 @@ import {
   getUserListRequest,
   loginRequest,
   logoutRequest,
+  resetUserPasswordRequest,
   updateProfileRequest,
   updateUserRequest,
 } from "@/lib/api/auth.api";
@@ -164,5 +165,17 @@ describe("auth.api", () => {
 
     expect(apiClient.put).toHaveBeenCalledWith("/auth/users/u1", payload);
     expect(result).toEqual(updatedUser);
+  });
+
+  it("resetUserPasswordRequest puts the payload to the user's reset-password endpoint and returns the confirmation message", async () => {
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { message: "Password reset successfully." },
+    });
+
+    const payload = { newPassword: "New1!aaaa", confirmNewPassword: "New1!aaaa" };
+    const result = await resetUserPasswordRequest("u1", payload);
+
+    expect(apiClient.put).toHaveBeenCalledWith("/auth/users/u1/reset-password", payload);
+    expect(result).toEqual({ message: "Password reset successfully." });
   });
 });
