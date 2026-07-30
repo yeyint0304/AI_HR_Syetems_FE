@@ -6,7 +6,7 @@
  */
 import { POST } from "@/app/api/auth/login/route";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { setAuthCookies } from "@/lib/server/authCookies";
+import { setAuthCookies, setUsernameCookie } from "@/lib/server/authCookies";
 import { MOCK_LOGIN_HINT } from "@/lib/server/mockAuth";
 
 jest.mock("@/lib/server/backendApiClient", () => ({
@@ -15,6 +15,7 @@ jest.mock("@/lib/server/backendApiClient", () => ({
 
 jest.mock("@/lib/server/authCookies", () => ({
   setAuthCookies: jest.fn(),
+  setUsernameCookie: jest.fn(),
 }));
 
 function buildToken(claims: Record<string, unknown>): string {
@@ -75,6 +76,31 @@ describe("POST /api/auth/login", () => {
     expect(response.status).toBe(200);
     expect(body.user).toEqual(expect.objectContaining({ email: "jane@example.com", role: "User" }));
     expect(setAuthCookies).toHaveBeenCalledWith(accessToken, "real-refresh-token", expect.any(Number));
+    expect(setUsernameCookie).not.toHaveBeenCalled();
+  });
+
+  it("resolves username from the real backend's response body (the JWT itself never carries one) and caches it", async () => {
+    const accessToken = buildToken({
+      sub: "1",
+      email: "admin@hrsystem.com",
+      role: "SystemAdmin",
+      exp: Math.floor(Date.now() / 1000) + 900,
+    });
+    (backendApiClient.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: { AccessToken: accessToken, RefreshToken: "real-refresh-token", Username: "admin" },
+      },
+    });
+
+    const response = await POST(jsonRequest({ usernameOrEmail: "admin", password: "Password@123" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.user).toEqual(expect.objectContaining({ username: "admin" }));
+    expect(setUsernameCookie).toHaveBeenCalledWith("admin");
   });
 
   it("returns a generic 401 for real backend credential failures (no mock fallback)", async () => {

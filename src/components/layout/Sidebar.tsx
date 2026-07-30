@@ -4,20 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { NAV_SECTIONS } from "@/lib/constants/navigation.constants";
+import { getFullName, getUserInitials } from "@/lib/utils/userDisplay";
 import type { AuthUser } from "@/types/auth.types";
 
 interface SidebarProps {
   user: AuthUser | null;
   /** Invoked after a real navigation link is clicked — used to close the mobile drawer. */
   onNavigate?: () => void;
-}
-
-function getInitials(user: AuthUser | null): string {
-  if (!user) return "?";
-  const first = user.firstName?.[0] ?? user.username?.[0] ?? user.email?.[0] ?? "";
-  const last = user.lastName?.[0] ?? "";
-  const initials = `${first}${last}`.trim();
-  return initials ? initials.toUpperCase() : "U";
 }
 
 /**
@@ -47,7 +40,16 @@ function resolveActiveHref(pathname: string | null, hrefs: string[]): string | n
  */
 export function Sidebar({ user, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const displayName = user?.firstName || user?.username || user?.email || "Guest";
+  // Footer identity card shows the signed-in user's full name (falling back
+  // to `username`, then `email`, only when no name is available) paired with
+  // their `role` — matching the wireframe's sidebar footer card ("System
+  // Admin" / "Sarah Chen" over their role, not an email/username;
+  // `docs/HR_System_FE_wireframe.pdf`). `firstName`/`lastName` come either
+  // straight from the backend's `Auth/Login`/`Auth/UpdateProfile` response or
+  // are derived from the JWT's `name` claim (see
+  // `lib/utils/jwt.ts#mapClaimsToAuthUser`) — see `lib/utils/userDisplay.ts`
+  // for the shared resolution order.
+  const displayName = getFullName(user) || "Guest";
 
   const visibleSections = NAV_SECTIONS.filter(
     (section) => !section.requiredRole || user?.role === section.requiredRole
@@ -144,7 +146,7 @@ export function Sidebar({ user, onNavigate }: SidebarProps) {
               aria-hidden="true"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white"
             >
-              {getInitials(user)}
+              {getUserInitials(user)}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-white">{displayName}</span>

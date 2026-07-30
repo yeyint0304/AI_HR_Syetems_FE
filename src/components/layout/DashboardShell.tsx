@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { useAuthStore } from "@/stores/auth.store";
 import type { AuthUser } from "@/types/auth.types";
 
 interface DashboardShellProps {
@@ -13,10 +14,18 @@ interface DashboardShellProps {
 /**
  * Client-side shell composing the sidebar + top bar + page content. A Client
  * Component only because it owns the mobile nav drawer's open/closed state —
- * the actual user is decoded server-side and passed down as a prop, so
- * there's no client-side auth fetch here.
+ * the server-decoded `user` prop seeds the initial render (avoiding an extra
+ * client fetch / hydration flash), but the Zustand store (kept in sync by
+ * `AuthStoreHydrator` and updated directly by mutations like
+ * `useAuth.ts#useUpdateProfile`) takes over once populated, so Sidebar/Topbar
+ * reflect a profile update immediately — without waiting for the
+ * server-rendered layout to re-run, which it wouldn't for name/email anyway
+ * since the backend never reissues the JWT on `Auth/UpdateProfile` (see
+ * `hooks/useAuth.ts#useUpdateProfile`'s doc comment).
  */
-export function DashboardShell({ user, children }: DashboardShellProps) {
+export function DashboardShell({ user: initialUser, children }: DashboardShellProps) {
+  const storeUser = useAuthStore((state) => state.user);
+  const user = storeUser ?? initialUser;
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   return (

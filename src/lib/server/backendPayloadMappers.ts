@@ -3,6 +3,7 @@ import type {
   ChangePasswordRequest,
   CreateUserRequest,
   LoginRequest,
+  ResetPasswordRequest,
   UpdateProfileRequest,
   UpdateUserRequest,
 } from "@/types/auth.types";
@@ -67,6 +68,14 @@ export function toBackendUpdateProfilePayload(payload: UpdateProfileRequest) {
 export function toBackendChangePasswordPayload(payload: ChangePasswordRequest) {
   return {
     CurrentPassword: payload.currentPassword,
+    NewPassword: payload.newPassword,
+    ConfirmNewPassword: payload.confirmNewPassword,
+  };
+}
+
+/** Matches `Auth/ResetPassword/{id}` — no `CurrentPassword` field (unlike `Auth/ChangePassword`). */
+export function toBackendResetPasswordPayload(payload: ResetPasswordRequest) {
+  return {
     NewPassword: payload.newPassword,
     ConfirmNewPassword: payload.confirmNewPassword,
   };

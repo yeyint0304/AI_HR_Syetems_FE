@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { backendApiClient } from "@/lib/server/backendApiClient";
-import { clearAuthCookies, getRefreshToken, setAuthCookies } from "@/lib/server/authCookies";
+import {
+  clearAuthCookies,
+  getRefreshToken,
+  getUsernameCookie,
+  setAuthCookies,
+} from "@/lib/server/authCookies";
 import { toBackendRefreshTokenPayload } from "@/lib/server/backendPayloadMappers";
 import { extractTokens, computeAccessTokenMaxAge } from "@/lib/server/tokenUtils";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
@@ -45,7 +50,13 @@ export async function POST() {
     }
 
     await setAuthCookies(tokens.accessToken, tokens.refreshToken, computeAccessTokenMaxAge(claims));
-    return NextResponse.json({ user }, { status: 200 });
+
+    // The refreshed JWT never carries a username claim for the real backend
+    // (see `lib/utils/jwt.ts`'s `CLAIM_KEYS` doc comment) — overlay the
+    // cached `USERNAME_COOKIE` so the session payload stays stable across
+    // refreshes instead of dropping `username` after the first refresh.
+    const resolvedUser = user.username ? user : { ...user, username: (await getUsernameCookie()) ?? undefined };
+    return NextResponse.json({ user: resolvedUser }, { status: 200 });
   } catch (error) {
     if (axios.isAxiosError(error)) {
       logger.warn("Refresh token request rejected by backend", { status: error.response?.status });

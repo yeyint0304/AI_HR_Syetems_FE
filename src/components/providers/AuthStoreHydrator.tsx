@@ -20,7 +20,7 @@ export function AuthStoreHydrator({ user }: AuthStoreHydratorProps) {
   useEffect(() => {
     setUser(user);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run whenever the server-provided user changes
-  }, [user?.id, user?.email, user?.role, user?.firstName, user?.lastName]);
+  }, [user?.id, user?.email, user?.role, user?.firstName, user?.lastName, user?.username]);
 
   return null;
 }

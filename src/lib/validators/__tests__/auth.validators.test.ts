@@ -1,6 +1,7 @@
 import {
   loginSchema,
   changePasswordSchema,
+  resetPasswordSchema,
   updateProfileSchema,
   createUserSchema,
   updateUserSchema,
@@ -70,6 +71,43 @@ describe("changePasswordSchema", () => {
   ])("rejects weak password %s (%s)", (weakPassword) => {
     const result = changePasswordSchema.safeParse({
       ...base,
+      newPassword: weakPassword,
+      confirmNewPassword: weakPassword,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("resetPasswordSchema", () => {
+  it("accepts a strong, matching new password (no currentPassword field required)", () => {
+    const result = resetPasswordSchema.safeParse({
+      newPassword: "NewPass1!",
+      confirmNewPassword: "NewPass1!",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects when confirmation does not match", () => {
+    const result = resetPasswordSchema.safeParse({
+      newPassword: "NewPass1!",
+      confirmNewPassword: "Mismatch1!",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message === "Passwords do not match.")).toBe(
+        true
+      );
+    }
+  });
+
+  it.each([
+    ["short1!", "too short"],
+    ["alllowercase1!", "missing uppercase"],
+    ["ALLUPPERCASE1!", "missing lowercase"],
+    ["NoNumbersHere!", "missing number"],
+    ["NoSpecialChars1", "missing special character"],
+  ])("rejects weak password %s (%s)", (weakPassword) => {
+    const result = resetPasswordSchema.safeParse({
       newPassword: weakPassword,
       confirmNewPassword: weakPassword,
     });

@@ -10,6 +10,7 @@ import {
   getUserListRequest,
   loginRequest,
   logoutRequest,
+  resetUserPasswordRequest,
   updateProfileRequest,
   updateUserRequest,
 } from "@/lib/api/auth.api";
@@ -19,6 +20,7 @@ import type {
   ChangePasswordRequest,
   CreateUserRequest,
   LoginRequest,
+  ResetPasswordRequest,
   UnassignedUserPage,
   UpdateProfileRequest,
   UpdateUserRequest,
@@ -70,15 +72,24 @@ export function useLogout() {
   });
 }
 
+/**
+ * `Auth/UpdateProfile` never reissues the JWT (see
+ * `app/api/auth/profile/route.ts`'s doc comment), so a server round-trip
+ * (`router.refresh()`) would only ever re-decode the *old* token and could
+ * even clobber this optimistic update back to stale data via
+ * `AuthStoreHydrator`. Instead, the authoritative updated `AuthUser` the
+ * backend just returned is written straight into the Zustand store — the
+ * single source of truth `components/layout/DashboardShell.tsx` reads from —
+ * so the Sidebar/Topbar name/role update immediately, without waiting on (or
+ * being reverted by) a server refresh.
+ */
 export function useUpdateProfile() {
-  const router = useRouter();
   const setUser = useAuthStore((state) => state.setUser);
 
   return useMutation({
     mutationFn: (payload: UpdateProfileRequest) => updateProfileRequest(payload),
     onSuccess: (user) => {
       setUser(user);
-      router.refresh();
     },
   });
 }
@@ -197,5 +208,20 @@ export function useUpdateUser(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USER_LIST_QUERY_KEY });
     },
+  });
+}
+
+/**
+ * Resets another user's password (the `/admin/users` "Reset password"
+ * action, `components/auth/ResetUserPasswordForm.tsx`) — a SystemAdmin-only
+ * escalation path distinct from `useChangePassword` (which requires knowing
+ * the *current* password and only ever changes the caller's own), backed by
+ * `Auth/ResetPassword/{id}` (`docs/HR_System_BE.postman_collection.json`).
+ * No cache invalidation is needed: resetting a password doesn't change any
+ * field `useUserList` renders.
+ */
+export function useResetUserPassword(userId: string) {
+  return useMutation({
+    mutationFn: (payload: ResetPasswordRequest) => resetUserPasswordRequest(userId, payload),
   });
 }
