@@ -16,6 +16,14 @@ import type { UserListItem } from "@/types/auth.types";
 
 export interface EditUserFormProps {
   user: UserListItem;
+  /**
+   * Whether `user` is the currently signed-in account. When `true`, the
+   * "Status" field is disabled — mirrors the self-row guard on the
+   * "Deactivate"/"Activate" table action in `UsersListView`, so a SystemAdmin
+   * can't lock themselves out of the app by flipping their own account
+   * inactive from this modal instead of that button.
+   */
+  isSelf?: boolean;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -39,8 +47,13 @@ export interface EditUserFormProps {
  * pre-selected the way `CreateUserForm` does — instead it defaults to a
  * "Keep current role" option (submitted as `roleId: null`, which the backend
  * treats as "no change", per its saved `Auth/UpdateUser` Postman example).
+ *
+ * `isSelf` disables the "Status" field when the row being edited is the
+ * signed-in user — the same self-lockout guard `UsersListView`'s
+ * "Deactivate"/"Activate" row action already enforces, applied here too so
+ * there's no second path to the same lockout via this modal.
  */
-export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
+export function EditUserForm({ user, isSelf = false, onSuccess, onCancel }: EditUserFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const updateMutation = useUpdateUser(user.id);
@@ -82,7 +95,11 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
         lastName: values.lastName,
         employeeId: values.employeeId || undefined,
         countryId: values.countryId || null,
-        isActive: values.isActive,
+        // Defense in depth: the "Status" field is disabled (and hidden from
+        // interaction) whenever `isSelf` is true — this just guarantees the
+        // submitted payload can never carry a stray `false` even if the
+        // disabled control were somehow bypassed.
+        isActive: isSelf ? true : values.isActive,
         roleId: values.roleId || null,
       },
       {
@@ -170,6 +187,8 @@ export function EditUserForm({ user, onSuccess, onCancel }: EditUserFormProps) {
               value={field.value ? "true" : "false"}
               onBlur={field.onBlur}
               onChange={(event) => field.onChange(event.target.value === "true")}
+              disabled={isSelf}
+              hint={isSelf ? "You cannot change your own account's status." : undefined}
               error={errors.isActive?.message}
               options={[
                 { value: "true", label: "Active" },

@@ -2,20 +2,26 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Pencil } from "lucide-react";
+import { KeyRound, Pencil, UserCheck, UserX } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { Modal } from "@/components/ui/Modal";
 import { EditUserForm } from "@/components/auth/EditUserForm";
 import { ResetUserPasswordForm } from "@/components/auth/ResetUserPasswordForm";
-import { useUserList } from "@/hooks/useAuth";
+import { useAuth, useUpdateUser, useUserList } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
 import type { UserListItem } from "@/types/auth.types";
+
+/** Display name for a user row, matching the "First Last, falling back to @username" convention used elsewhere in this table and in the Reset password success message. */
+function displayName(user: UserListItem): string {
+  return `${user.firstName} ${user.lastName}`.trim() || user.username;
+}
 
 /** Role badge colors, matching the wireframe's "System Admin=yellow, Project Admin=green, Employee=grey" convention (`docs/HR_System_FE_wireframe.pdf`, `/admin/users`) — same convention as `components/roles/RolesListView.tsx`. */
 const ROLE_BADGE_CLASSES: Record<string, string> = {
@@ -69,13 +75,30 @@ function summarizeByRole(users: UserListItem[]): { roleName: string; count: numb
  * another user's password without knowing their current one, distinct from
  * the self-service "Change password" screen (`/profile/change-password`,
  * which requires the caller's own current password).
+ *
+ * "Deactivate"/"Activate" is a third per-row action: a confirm-gated status
+ * toggle (via the shared `ConfirmDialog`, matching
+ * `components/projects/ProjectForm.tsx`'s "Deactivate project" pattern)
+ * that reuses the same `useUpdateUser`/`Auth/UpdateUser/{id}` mutation
+ * `EditUserForm` uses — sending the row's existing fields back unchanged
+ * except `isActive` flipped, and `roleId: null` (per `Auth/UpdateUser`'s
+ * saved example, meaning "keep current role"). The currently signed-in
+ * user's own row disables the action — exposed both via `title` (mouse
+ * users) and an `aria-describedby`-linked, visually-hidden hint (screen
+ * reader users, since `title` alone isn't reliably announced) — so a
+ * SystemAdmin can't lock themselves out by deactivating their own account.
+ * `EditUserForm`'s "Status" field carries the same `isSelf` guard, so the
+ * Edit modal can't be used as a second path to the same lockout.
  */
 export function UsersListView() {
+  const { user: currentUser } = useAuth();
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [userBeingEdited, setUserBeingEdited] = useState<UserListItem | null>(null);
   const [userBeingReset, setUserBeingReset] = useState<UserListItem | null>(null);
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
+  const [userPendingStatusChange, setUserPendingStatusChange] = useState<UserListItem | null>(null);
+  const [statusChangeError, setStatusChangeError] = useState<string | null>(null);
 
   const {
     data: userPage,
@@ -88,6 +111,40 @@ export function UsersListView() {
   const users = useMemo(() => userPage?.items ?? [], [userPage]);
   const roleSummary = useMemo(() => summarizeByRole(users), [users]);
   const { page, setPage, totalPages, pageItems: pagedUsers } = useTablePagination(users);
+
+  const updateStatusMutation = useUpdateUser(userPendingStatusChange?.id ?? "");
+  const pendingStatusChangeName = userPendingStatusChange ? displayName(userPendingStatusChange) : "";
+
+  function handleRequestStatusChange(user: UserListItem) {
+    setStatusChangeError(null);
+    setUserPendingStatusChange(user);
+  }
+
+  function handleConfirmStatusChange() {
+    if (!userPendingStatusChange) return;
+    const target = userPendingStatusChange;
+    setStatusChangeError(null);
+    updateStatusMutation.mutate(
+      {
+        username: target.username,
+        email: target.email,
+        firstName: target.firstName,
+        lastName: target.lastName,
+        employeeId: target.employeeId ?? undefined,
+        countryId: target.countryId ?? null,
+        isActive: !target.isActive,
+        roleId: null,
+      },
+      {
+        onSuccess: () => setUserPendingStatusChange(null),
+        onError: (mutationError) => {
+          setStatusChangeError(
+            getApiErrorMessage(mutationError, "Unable to update the user's status. Please try again.")
+          );
+        },
+      }
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -109,6 +166,7 @@ export function UsersListView() {
       </div>
 
       {resetSuccessMessage && <Alert variant="success">{resetSuccessMessage}</Alert>}
+      {statusChangeError && <Alert variant="error">{statusChangeError}</Alert>}
 
       {roleSummary.length > 0 && (
         <div className="flex flex-wrap gap-2" aria-label="User counts by role">
@@ -184,7 +242,8 @@ export function UsersListView() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pagedUsers.map((user) => {
-                  const name = `${user.firstName} ${user.lastName}`.trim() || user.username;
+                  const name = displayName(user);
+                  const isSelf = currentUser?.id === user.id;
                   return (
                     <tr key={user.id}>
                       <td className="px-4 py-3">
@@ -234,6 +293,30 @@ export function UsersListView() {
                             <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
                             Reset password
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRequestStatusChange(user)}
+                            disabled={isSelf}
+                            title={isSelf ? "You cannot deactivate your own account." : undefined}
+                            aria-describedby={isSelf ? `self-status-hint-${user.id}` : undefined}
+                            className={
+                              user.isActive
+                                ? "inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:text-slate-300"
+                                : "inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-700 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:text-slate-300"
+                            }
+                          >
+                            {user.isActive ? (
+                              <UserX aria-hidden="true" className="h-3.5 w-3.5" />
+                            ) : (
+                              <UserCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                            )}
+                            {user.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                          {isSelf && (
+                            <span id={`self-status-hint-${user.id}`} className="sr-only">
+                              You cannot deactivate your own account.
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -256,6 +339,7 @@ export function UsersListView() {
         {userBeingEdited && (
           <EditUserForm
             user={userBeingEdited}
+            isSelf={currentUser?.id === userBeingEdited.id}
             onSuccess={() => setUserBeingEdited(null)}
             onCancel={() => setUserBeingEdited(null)}
           />
@@ -271,7 +355,7 @@ export function UsersListView() {
         {userBeingReset && (
           <ResetUserPasswordForm
             userId={userBeingReset.id}
-            userLabel={`${userBeingReset.firstName} ${userBeingReset.lastName}`.trim() || userBeingReset.username}
+            userLabel={displayName(userBeingReset)}
             onSuccess={() => {
               setUserBeingReset(null);
               setResetSuccessMessage(`${userBeingReset.username}'s password has been reset successfully.`);
@@ -280,6 +364,21 @@ export function UsersListView() {
           />
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={userPendingStatusChange !== null}
+        title={userPendingStatusChange?.isActive ? "Deactivate user" : "Activate user"}
+        description={
+          userPendingStatusChange?.isActive
+            ? `Are you sure you want to deactivate ${pendingStatusChangeName}? They will no longer be able to sign in.`
+            : `Are you sure you want to activate ${pendingStatusChangeName}? They will regain access to sign in.`
+        }
+        confirmLabel={userPendingStatusChange?.isActive ? "Deactivate" : "Activate"}
+        variant={userPendingStatusChange?.isActive ? "danger" : "primary"}
+        isConfirming={updateStatusMutation.isPending}
+        onConfirm={handleConfirmStatusChange}
+        onCancel={() => setUserPendingStatusChange(null)}
+      />
     </div>
   );
 }

@@ -16,27 +16,19 @@ import { formatDisplayDate } from "@/lib/utils/date";
 import type { Currency } from "@/types/currency.types";
 import type { ExchangeRate } from "@/types/exchangeRate.types";
 
-/** For each non-base currency, the most recent (by effective date) active rate from the base currency to it — backs the wireframe's "currency summary cards" row. */
-function latestRateFor(rates: ExchangeRate[], baseCurrencyId: string, targetCurrencyId: string): ExchangeRate | null {
-  const candidates = rates.filter(
-    (rate) => rate.fromCurrency.id === baseCurrencyId && rate.toCurrency.id === targetCurrencyId
-  );
-  if (candidates.length === 0) return null;
-  return candidates.reduce((latest, candidate) =>
-    candidate.effectiveDate > latest.effectiveDate ? candidate : latest
-  );
-}
-
 type ModalState = { mode: "create" } | { mode: "edit"; exchangeRate: ExchangeRate } | null;
 
 /**
  * `/admin/exchange-rates` — define conversion rates from the base currency to
- * other currencies, per the wireframe (`docs/HR_System_FE_wireframe.pdf`):
- * currency summary cards at the top, a rates table below, "+ Add Rate"
- * opening a modal, and per-row Edit (pre-filled modal) / Delete (confirm
- * modal) actions. Fetches live data via `useCurrencyList` and
- * `useExchangeRateList` (TanStack Query -> `lib/api/*.ts` -> this app's own
- * Route Handlers -> the .NET backend).
+ * other currencies: a rates table, "+ Add Rate" opening a modal, and per-row
+ * Edit (pre-filled modal) / Delete (confirm modal) actions. Fetches live data
+ * via `useCurrencyList` and `useExchangeRateList` (TanStack Query ->
+ * `lib/api/*.ts` -> this app's own Route Handlers -> the .NET backend).
+ *
+ * Note: the per-currency "summary cards" row that previously sat above the
+ * table (one card per non-base currency, showing only its latest rate) has
+ * been removed — the rates table below already shows every rate per pair
+ * and is the single source of truth.
  */
 export function ExchangeRatesListView() {
   const [modalState, setModalState] = useState<ModalState>(null);
@@ -141,35 +133,6 @@ export function ExchangeRatesListView() {
           )}
 
           {deleteError && <Alert variant="error">{deleteError}</Alert>}
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-900">{baseCurrency.code}</span>
-                <span className="text-lg text-slate-500">{baseCurrency.symbol}</span>
-              </div>
-              <p className="mt-1 text-xs text-slate-500">{baseCurrency.name}</p>
-              <p className="mt-2 text-xs font-medium text-blue-700">Base currency</p>
-            </div>
-
-            {otherCurrencies.map((currency) => {
-              const latest = latestRateFor(exchangeRates ?? [], baseCurrency.id, currency.id);
-              return (
-                <div key={currency.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-900">{currency.code}</span>
-                    <span className="text-lg text-slate-500">{currency.symbol}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">{currency.name}</p>
-                  <p className="mt-2 text-xs font-medium text-slate-600">
-                    {latest
-                      ? `1 ${baseCurrency.code} = ${latest.rate} ${currency.code}`
-                      : "No rate set"}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {!exchangeRates || exchangeRates.length === 0 ? (

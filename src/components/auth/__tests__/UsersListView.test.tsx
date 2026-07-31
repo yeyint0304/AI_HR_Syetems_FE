@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UsersListView } from "@/components/auth/UsersListView";
 import { apiClient } from "@/lib/api/axiosInstance";
+import { useAuthStore } from "@/stores/auth.store";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), put: jest.fn() },
@@ -62,6 +63,7 @@ function mockUsersResponse(items: unknown[] = USERS, totalCount = items.length) 
 describe("UsersListView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useAuthStore.setState({ user: null });
   });
 
   it("shows a loading state while fetching", () => {
@@ -245,5 +247,128 @@ describe("UsersListView", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("deactivates an active user after confirming in the dialog", async () => {
+    mockUsersResponse();
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { data: { ...USERS[1], isActive: false } },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    expect(row).not.toBeNull();
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /^deactivate$/i }));
+
+    const confirmDialog = await screen.findByRole("alertdialog", { name: /deactivate user/i });
+    await user.click(within(confirmDialog).getByRole("button", { name: /^deactivate$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(
+        "/auth/users/u2",
+        expect.objectContaining({ isActive: false, roleId: null })
+      )
+    );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+  });
+
+  it("activates an inactive user after confirming in the dialog", async () => {
+    mockUsersResponse([{ ...USERS[1], isActive: false }]);
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({
+      data: { data: { ...USERS[1], isActive: true } },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    expect(row).not.toBeNull();
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /^activate$/i }));
+
+    const confirmDialog = await screen.findByRole("alertdialog", { name: /activate user/i });
+    await user.click(within(confirmDialog).getByRole("button", { name: /^activate$/i }));
+
+    await waitFor(() =>
+      expect(apiClient.put).toHaveBeenCalledWith(
+        "/auth/users/u2",
+        expect.objectContaining({ isActive: true, roleId: null })
+      )
+    );
+  });
+
+  it("shows an inline error and keeps the confirm dialog open when the status change fails", async () => {
+    mockUsersResponse();
+    (apiClient.put as jest.Mock).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { data: { message: "Unable to update the user's status. Please try again." } },
+    });
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /^deactivate$/i }));
+
+    const confirmDialog = await screen.findByRole("alertdialog", { name: /deactivate user/i });
+    await user.click(within(confirmDialog).getByRole("button", { name: /^deactivate$/i }));
+
+    expect(await screen.findByText(/unable to update the user's status/i)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("closes the status change dialog via Cancel without submitting", async () => {
+    mockUsersResponse();
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const row = within(table).getByText("@tester").closest("tr");
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /^deactivate$/i }));
+
+    await screen.findByRole("alertdialog", { name: /deactivate user/i });
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("disables the status change action for the currently signed-in user's own row", async () => {
+    useAuthStore.setState({ user: { id: "u1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    mockUsersResponse();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const ownRow = within(table).getByText("@admin").closest("tr");
+    expect(ownRow).not.toBeNull();
+    const ownStatusButton = within(ownRow as HTMLElement).getByRole("button", { name: /^deactivate$/i });
+    expect(ownStatusButton).toBeDisabled();
+    expect(ownStatusButton).toHaveAttribute("title", "You cannot deactivate your own account.");
+    const describedById = ownStatusButton.getAttribute("aria-describedby");
+    expect(describedById).toBeTruthy();
+    expect(document.getElementById(describedById as string)).toHaveTextContent(
+      /you cannot deactivate your own account/i
+    );
+
+    const otherRow = within(table).getByText("@tester").closest("tr");
+    const otherStatusButton = within(otherRow as HTMLElement).getByRole("button", { name: /^deactivate$/i });
+    expect(otherStatusButton).not.toBeDisabled();
+    expect(otherStatusButton).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("disables the Status field in the Edit modal when editing the signed-in user's own row", async () => {
+    useAuthStore.setState({ user: { id: "u1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    mockUsersResponse();
+    const user = userEvent.setup();
+    renderWithClient(<UsersListView />);
+
+    const table = await screen.findByRole("table");
+    const ownRow = within(table).getByText("@admin").closest("tr");
+    expect(ownRow).not.toBeNull();
+    await user.click(within(ownRow as HTMLElement).getByRole("button", { name: /^edit$/i }));
+
+    const statusField = await screen.findByLabelText(/^status$/i);
+    expect(statusField).toBeDisabled();
   });
 });
