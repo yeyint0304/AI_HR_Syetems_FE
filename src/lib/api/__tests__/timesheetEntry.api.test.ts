@@ -3,6 +3,7 @@ import {
   approveTimesheetEntryRequest,
   createTimesheetEntryRequest,
   deleteTimesheetEntryRequest,
+  getProjectAdminTimesheetSummaryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
   rejectTimesheetEntryRequest,
@@ -106,5 +107,35 @@ describe("timesheetEntry.api", () => {
     await rejectTimesheetEntryRequest("1");
 
     expect(apiClient.delete).toHaveBeenCalledWith("/timesheet-entries/1");
+  });
+
+  it("getProjectAdminTimesheetSummaryRequest fetches and unwraps the summary", async () => {
+    const summary = {
+      totalHours: 40,
+      approvedHours: 20,
+      pendingHours: 20,
+      projectSummaries: [],
+      entries: [],
+    };
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: summary } });
+
+    const result = await getProjectAdminTimesheetSummaryRequest({ projectId: "project-1" });
+
+    expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries/project-admin-summary", {
+      params: { projectId: "project-1" },
+    });
+    expect(result).toEqual(summary);
+  });
+
+  it("getProjectAdminTimesheetSummaryRequest forwards no params when filters are omitted", async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { data: { totalHours: 0, approvedHours: 0, pendingHours: 0, projectSummaries: [], entries: [] } },
+    });
+
+    await getProjectAdminTimesheetSummaryRequest();
+
+    expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries/project-admin-summary", {
+      params: undefined,
+    });
   });
 });

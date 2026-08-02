@@ -15,6 +15,7 @@ import { useTablePagination } from "@/hooks/useTablePagination";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
+  useProjectAdminTimesheetSummary,
   useRejectTimesheetEntry,
   useTimesheetEntryList,
   useUpdateTimesheetEntry,
@@ -85,15 +86,27 @@ function sumHours(entries: TimesheetEntry[]): number {
  * approval state.
  *
  * Manager approval workflow: for SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`),
- * this view broadens its scope from "my history" to every user's entries (the
- * backend's `GetAllTimesheetEntries` already supports this — see
- * `app/api/timesheet-entries/route.ts`) and adds a "User" column plus
- * "Approve"/"Reject" actions on pending entries, calling
- * `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`. This
- * is the review/approval step `INV-01` ("Includes approved entries only" —
+ * this view broadens its scope from "my history" to every user's entries and
+ * adds a "User" column plus "Approve"/"Reject" actions on pending entries,
+ * calling `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`.
+ * This is the review/approval step `INV-01` ("Includes approved entries only" —
  * `docs/HR_System_User_Stories_Backlog.xlsx`) depends on before an entry can
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
  * treated as irreversible from this UI (confirmed via `ConfirmDialog`).
+ *
+ * **Entries data source, split by role**: `SystemAdmin` and a plain `User`
+ * are powered by `TimesheetEntry/GetAllTimesheetEntries` (`useTimesheetEntryList`,
+ * via `app/api/timesheet-entries/route.ts`) exactly as before. A `ProjectAdmin`
+ * (`isProjectScopedManager`) instead uses the backend's dedicated
+ * `TimesheetEntry/GetProjectAdminTimesheetSummary` endpoint
+ * (`useProjectAdminTimesheetSummary`, via
+ * `app/api/timesheet-entries/project-admin-summary/route.ts`) — per this
+ * app's API-integration requirement that a Project Admin's timesheet review
+ * be backed by that manager-facing summary endpoint rather than the org-wide
+ * list `SystemAdmin` uses. Only one of the two queries is ever enabled at a
+ * time; both are filtered by the same "Project" select below, and the rest
+ * of this component (filtering, pagination, Approve/Reject, Edit) is
+ * unaware of which one supplied `entries`.
  *
  * Per row, the Actions column renders *every* action the signed-in user is
  * entitled to for that entry — ownership and role are independent,
@@ -226,19 +239,47 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     error: periodsError,
     refetch: refetchPeriods,
   } = useTimesheetPeriodList();
+  // See this component's doc comment ("Entries data source, split by role").
+  // A `ProjectAdmin` uses `useProjectAdminTimesheetSummary`
+  // (`GetProjectAdminTimesheetSummary`); `SystemAdmin`/a plain `User` use
+  // `useTimesheetEntryList` (`GetAllTimesheetEntries`) — only one of the two
+  // queries below is ever enabled.
   const {
-    data: entries,
-    isLoading: isEntriesLoading,
-    isError: isEntriesError,
-    error: entriesError,
-    refetch: refetchEntries,
-  } = useTimesheetEntryList({
-    // Managers review/approve every user's entries here; a plain `User` is
-    // always scoped to their own (matching the ownership rules enforced
-    // server-side in `app/api/timesheet-entries/route.ts`).
-    userId: canApprove ? undefined : currentUserId,
-    projectId: appliedFilters.projectId || undefined,
-  });
+    data: allEntries,
+    isLoading: isAllEntriesLoading,
+    isError: isAllEntriesError,
+    error: allEntriesError,
+    refetch: refetchAllEntries,
+  } = useTimesheetEntryList(
+    {
+      // Managers review/approve every user's entries here; a plain `User` is
+      // always scoped to their own (matching the ownership rules enforced
+      // server-side in `app/api/timesheet-entries/route.ts`).
+      userId: canApprove ? undefined : currentUserId,
+      projectId: appliedFilters.projectId || undefined,
+    },
+    { enabled: !isProjectScopedManager }
+  );
+
+  const {
+    data: projectAdminSummary,
+    isLoading: isProjectAdminSummaryLoading,
+    isError: isProjectAdminSummaryError,
+    error: projectAdminSummaryError,
+    refetch: refetchProjectAdminSummary,
+  } = useProjectAdminTimesheetSummary(
+    { projectId: appliedFilters.projectId || undefined },
+    { enabled: isProjectScopedManager }
+  );
+
+  const entries = isProjectScopedManager ? projectAdminSummary?.entries : allEntries;
+  const isEntriesLoading = isProjectScopedManager ? isProjectAdminSummaryLoading : isAllEntriesLoading;
+  const isEntriesError = isProjectScopedManager ? isProjectAdminSummaryError : isAllEntriesError;
+  const entriesError = isProjectScopedManager ? projectAdminSummaryError : allEntriesError;
+
+  function refetchEntries() {
+    return isProjectScopedManager ? refetchProjectAdminSummary() : refetchAllEntries();
+  }
 
   const updateMutation = useUpdateTimesheetEntry();
   const approveMutation = useApproveTimesheetEntry();

@@ -9,18 +9,22 @@ import {
 } from "@/lib/server/reportResponseMappers";
 import { monthlyCostRevenueQuerySchema } from "@/lib/validators/report.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageReports } from "@/lib/constants/report.constants";
+import { canManageReports, isProjectScopedReportManager } from "@/lib/constants/report.constants";
 
 /**
  * GET /api/reports/cost-revenue
- * [Auth] Generates the "Monthly Cost & Revenue" report via
- * `Report/GenerateMonthlyCostRevenue` (`year`/`month` required,
- * `projectId`/`currencyId` optional).
+ * [Auth] Generates the "Monthly Cost & Revenue" report (`year`/`month`
+ * required, `projectId`/`currencyId` optional).
  *
  * Restricted to `REPORT_MANAGER_ROLES` (SystemAdmin/ProjectAdmin) — see
  * `lib/constants/report.constants.ts` for the rationale (this report exposes
  * per-role billing rates, cost, revenue and margin — sensitive financial
  * data a plain `User` has no legitimate need to see).
+ *
+ * **Backend endpoint, split by role** (per this app's API-integration
+ * requirement): a `ProjectAdmin` (`isProjectScopedReportManager`) is powered
+ * by `Report/GenerateMyCostRevenue` — scoped to the projects they manage —
+ * while `SystemAdmin` keeps the org-wide `Report/GenerateMonthlyCostRevenue`.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -62,8 +66,12 @@ export async function GET(request: Request) {
     );
   }
 
+  const backendPath = isProjectScopedReportManager(currentUser.role)
+    ? "/Report/GenerateMyCostRevenue"
+    : "/Report/GenerateMonthlyCostRevenue";
+
   try {
-    const response = await backendApiClient.get("/Report/GenerateMonthlyCostRevenue", {
+    const response = await backendApiClient.get(backendPath, {
       params: parsedQuery.data,
       headers: { Authorization: `Bearer ${accessToken}` },
     });

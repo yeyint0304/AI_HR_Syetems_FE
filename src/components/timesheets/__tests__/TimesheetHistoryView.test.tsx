@@ -126,6 +126,14 @@ function mockApi({
     if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
     if (url === "/projects") return Promise.resolve({ data: { data: projects } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
+    // ProjectAdmin's dedicated summary endpoint (`GetProjectAdminTimesheetSummary`) —
+    // `entries` is reused here so every existing entries-based assertion works
+    // identically regardless of which role/endpoint powered the fetch.
+    if (url === "/timesheet-entries/project-admin-summary") {
+      return Promise.resolve({
+        data: { data: { totalHours: 0, approvedHours: 0, pendingHours: 0, projectSummaries: [], entries } },
+      });
+    }
     const assignmentsMatch = url.match(/^\/projects\/(.+)\/assignments$/);
     if (assignmentsMatch) {
       return Promise.resolve({ data: { data: assignments[assignmentsMatch[1]] ?? [] } });
@@ -456,6 +464,20 @@ describe("TimesheetHistoryView", () => {
       );
     });
 
+    // API-integration requirement: a SystemAdmin keeps using the org-wide
+    // `GetAllTimesheetEntries`, never the ProjectAdmin-only summary endpoint.
+    it("never calls the project-admin-summary endpoint", async () => {
+      mockApi({ entries: [] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByText(/you have no timesheet entries yet/i);
+
+      expect(apiClient.get).not.toHaveBeenCalledWith(
+        "/timesheet-entries/project-admin-summary",
+        expect.anything()
+      );
+    });
+
     it("shows a User column and Approve/Reject actions for another user's pending entry", async () => {
       mockApi({ entries: [PENDING_ENTRY, OTHER_USER_PENDING_ENTRY] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
@@ -699,6 +721,39 @@ describe("TimesheetHistoryView", () => {
 
       const link = await screen.findByRole("link", { name: /generate invoice/i });
       expect(link).toHaveAttribute("href", "/invoices/generate");
+    });
+
+    // API-integration requirement: a ProjectAdmin's timesheet review is
+    // backed by `GetProjectAdminTimesheetSummary`, not the org-wide
+    // `GetAllTimesheetEntries` a SystemAdmin uses.
+    it("fetches entries via the project-admin-summary endpoint, never GetAllTimesheetEntries", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(apiClient.get).toHaveBeenCalledWith(
+        "/timesheet-entries/project-admin-summary",
+        expect.objectContaining({ params: expect.objectContaining({ projectId: undefined }) })
+      );
+      expect(apiClient.get).not.toHaveBeenCalledWith("/timesheet-entries", expect.anything());
+    });
+
+    it("forwards the selected Project filter as projectId to the project-admin-summary endpoint", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+      await user.selectOptions(screen.getByLabelText(/^project$/i), PROJECT_ID);
+      await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries/project-admin-summary",
+          expect.objectContaining({ params: expect.objectContaining({ projectId: PROJECT_ID }) })
+        )
+      );
     });
 
     it("shows Approve/Reject for another user's pending entry on a project the ProjectAdmin is assigned to", async () => {

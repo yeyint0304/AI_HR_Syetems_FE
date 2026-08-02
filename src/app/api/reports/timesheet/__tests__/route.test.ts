@@ -33,6 +33,7 @@ const otherUserId = "84e4be46-3d9f-4e86-ab08-74d8837958b9";
 
 const userToken = buildToken({ sub: selfUserId, email: "user@hrsystem.com", role: "User" });
 const adminToken = buildToken({ sub: "admin-1", email: "admin@hrsystem.com", role: "SystemAdmin" });
+const projectAdminToken = buildToken({ sub: "pa-1", email: "pa@d3-sg.com", role: "ProjectAdmin" });
 
 function getRequest(query = ""): Request {
   return new Request(`http://localhost/api/reports/timesheet${query}`);
@@ -129,6 +130,19 @@ describe("GET /api/reports/timesheet", () => {
     expect(backendApiClient.get).toHaveBeenCalledWith(
       "/Report/GenerateTimesheetReport",
       expect.objectContaining({ params: expect.objectContaining({ userId: otherUserId }) })
+    );
+  });
+
+  it("calls Report/GenerateMyTimesheetReport for a ProjectAdmin, omitting userId", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({ data: successEnvelope });
+
+    const response = await GET(getRequest("?startDate=2026-07-01&endDate=2026-07-20"));
+
+    expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Report/GenerateMyTimesheetReport",
+      expect.objectContaining({ params: expect.objectContaining({ userId: undefined }) })
     );
   });
 

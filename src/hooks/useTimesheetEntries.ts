@@ -5,6 +5,7 @@ import {
   approveTimesheetEntryRequest,
   createTimesheetEntryRequest,
   deleteTimesheetEntryRequest,
+  getProjectAdminTimesheetSummaryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
   rejectTimesheetEntryRequest,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/api/timesheetEntry.api";
 import type {
   CreateTimesheetEntryRequest,
+  ProjectAdminTimesheetSummaryFilters,
   TimesheetEntryListFilters,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
@@ -34,6 +36,28 @@ export function useTimesheetEntryList(
   return useQuery({
     queryKey: timesheetEntryListQueryKey(filters),
     queryFn: () => getTimesheetEntryListRequest(filters),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+const projectAdminTimesheetSummaryQueryKey = (filters?: ProjectAdminTimesheetSummaryFilters) =>
+  [...TIMESHEET_ENTRIES_QUERY_KEY, "project-admin-summary", filters ?? {}] as const;
+
+/**
+ * `ProjectAdmin`-facing counterpart to `useTimesheetEntryList` — backed by
+ * `TimesheetEntry/GetProjectAdminTimesheetSummary` (via
+ * `getProjectAdminTimesheetSummaryRequest`) rather than
+ * `GetAllTimesheetEntries`. Used by `TimesheetHistoryView` only while the
+ * signed-in user is a `ProjectAdmin`; `SystemAdmin`/a plain `User` keep using
+ * `useTimesheetEntryList`.
+ */
+export function useProjectAdminTimesheetSummary(
+  filters?: ProjectAdminTimesheetSummaryFilters,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: projectAdminTimesheetSummaryQueryKey(filters),
+    queryFn: () => getProjectAdminTimesheetSummaryRequest(filters),
     enabled: options?.enabled ?? true,
   });
 }

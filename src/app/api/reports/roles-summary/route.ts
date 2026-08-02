@@ -9,18 +9,23 @@ import {
 } from "@/lib/server/reportResponseMappers";
 import { userRolesSummaryQuerySchema } from "@/lib/validators/report.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageReports } from "@/lib/constants/report.constants";
+import { canManageReports, isProjectScopedReportManager } from "@/lib/constants/report.constants";
 
 /**
  * GET /api/reports/roles-summary
- * [Auth] Generates the "User Roles Summary" report via
- * `Report/GenerateUserRolesSummary` (`startDate`/`endDate` required,
- * `projectId` optional).
+ * [Auth] Generates the "User Roles Summary" report (`startDate`/`endDate`
+ * required, `projectId` optional).
  *
  * Restricted to `REPORT_MANAGER_ROLES` (SystemAdmin/ProjectAdmin) — see
  * `lib/constants/report.constants.ts` for the rationale (this report exposes
  * aggregate headcount/utilization data across the whole organization, not
  * just the signed-in user's own work).
+ *
+ * **Backend endpoint, split by role** (per this app's API-integration
+ * requirement): a `ProjectAdmin` (`isProjectScopedReportManager`) is powered
+ * by `Report/GenerateMyUserRolesSummary` — scoped to the team/projects they
+ * manage — while `SystemAdmin` keeps the org-wide
+ * `Report/GenerateUserRolesSummary`.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -61,8 +66,12 @@ export async function GET(request: Request) {
     );
   }
 
+  const backendPath = isProjectScopedReportManager(currentUser.role)
+    ? "/Report/GenerateMyUserRolesSummary"
+    : "/Report/GenerateUserRolesSummary";
+
   try {
-    const response = await backendApiClient.get("/Report/GenerateUserRolesSummary", {
+    const response = await backendApiClient.get(backendPath, {
       params: parsedQuery.data,
       headers: { Authorization: `Bearer ${accessToken}` },
     });

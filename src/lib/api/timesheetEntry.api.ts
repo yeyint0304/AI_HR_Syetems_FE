@@ -1,6 +1,8 @@
 import { apiClient } from "@/lib/api/axiosInstance";
 import type {
   CreateTimesheetEntryRequest,
+  ProjectAdminTimesheetSummary,
+  ProjectAdminTimesheetSummaryFilters,
   TimesheetEntry,
   TimesheetEntryListFilters,
   UpdateTimesheetEntryRequest,
@@ -83,4 +85,22 @@ export async function approveTimesheetEntryRequest(id: string): Promise<void> {
  */
 export async function rejectTimesheetEntryRequest(id: string): Promise<void> {
   await apiClient.delete(`/timesheet-entries/${id}`);
+}
+
+/**
+ * `ProjectAdmin`-facing summary/entry-list, backed by the dedicated
+ * `TimesheetEntry/GetProjectAdminTimesheetSummary` endpoint (via this app's
+ * own `/api/timesheet-entries/project-admin-summary` Route Handler) rather
+ * than `getTimesheetEntryListRequest`'s `GetAllTimesheetEntries` — see
+ * `components/timesheets/TimesheetHistoryView.tsx` for how the two are
+ * split by role.
+ */
+export async function getProjectAdminTimesheetSummaryRequest(
+  filters?: ProjectAdminTimesheetSummaryFilters
+): Promise<ProjectAdminTimesheetSummary> {
+  const { data } = await apiClient.get<{ data: ProjectAdminTimesheetSummary }>(
+    "/timesheet-entries/project-admin-summary",
+    { params: filters }
+  );
+  return data.data;
 }

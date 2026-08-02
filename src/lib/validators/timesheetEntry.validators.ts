@@ -69,6 +69,20 @@ export const timesheetEntryListQuerySchema = z.object({
 export type TimesheetEntryListQuery = z.infer<typeof timesheetEntryListQuerySchema>;
 
 /**
+ * Query filter for `TimesheetEntry/GetProjectAdminTimesheetSummary`
+ * (`app/api/timesheet-entries/project-admin-summary/route.ts`). `projectId`
+ * is optional — see `ProjectAdminTimesheetSummaryFilters`
+ * (`types/timesheetEntry.types.ts`) for why — but is validated with the same
+ * lenient `guidSchema` as `timesheetEntryListQuerySchema.projectId` when present.
+ */
+export const projectAdminTimesheetSummaryQuerySchema = z.object({
+  projectId: guidSchema("Enter a valid project ID.").optional(),
+});
+export type ProjectAdminTimesheetSummaryQuery = z.infer<
+  typeof projectAdminTimesheetSummaryQuerySchema
+>;
+
+/**
  * Client-side-only validation for the "Timesheet History" (`/timesheets/history`)
  * Date From/Date To filter bar (`docs/HR_System_FE_wireframe.pdf`). The backend's
  * `TimesheetEntry/GetAllTimesheetEntries` has no date-range query param, so this

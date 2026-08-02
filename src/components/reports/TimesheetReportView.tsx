@@ -10,7 +10,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProjectList } from "@/hooks/useProjects";
 import { useTimesheetReport } from "@/hooks/useReports";
 import { buildTimesheetReportExportUrl } from "@/lib/api/report.api";
-import { canManageReports, DEFAULT_TIMESHEET_REPORT_PAGE_SIZE, EXPORT_FORMAT_OPTIONS } from "@/lib/constants/report.constants";
+import {
+  canManageReports,
+  DEFAULT_TIMESHEET_REPORT_PAGE_SIZE,
+  EXPORT_FORMAT_OPTIONS,
+  isProjectScopedReportManager,
+} from "@/lib/constants/report.constants";
 import { timesheetReportFilterSchema } from "@/lib/validators/report.validators";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate, getCurrentMonthToDateRange } from "@/lib/utils/date";
@@ -56,9 +61,14 @@ function toAppliedFilters(draft: DraftFilters, page: number): TimesheetReportFil
  *
  * A plain `User` is self-scoped to their own rows server-side (see
  * `app/api/reports/timesheet/route.ts`), so the "User ID" filter is only
- * rendered for SystemAdmin/ProjectAdmin. There is no "list all users"
- * reference-data endpoint in this codebase yet (user management is a
- * separate, not-yet-implemented Administration module — see
+ * rendered for `SystemAdmin` — the only role whose branch there
+ * (`Report/GenerateTimesheetReport`) actually honors an arbitrary `userId`.
+ * A `ProjectAdmin` is powered by the self/team-scoped
+ * `Report/GenerateMyTimesheetReport` instead (see that Route Handler's
+ * docblock), which documents no `userId` param, so the filter would be
+ * misleading if shown to them. There is no "list all users" reference-data
+ * endpoint in this codebase yet (user management is a separate,
+ * not-yet-implemented Administration module — see
  * `lib/constants/navigation.constants.ts`), so this intentionally accepts a
  * raw User ID (GUID) rather than a fabricated dropdown.
  *
@@ -72,7 +82,11 @@ function toAppliedFilters(draft: DraftFilters, page: number): TimesheetReportFil
  */
 export function TimesheetReportView() {
   const { user } = useAuth();
-  const canFilterByUser = canManageReports(user?.role);
+  // Only SystemAdmin's branch (`Report/GenerateTimesheetReport`) honors an
+  // arbitrary `userId` filter — a ProjectAdmin is powered by the self/team
+  // -scoped `Report/GenerateMyTimesheetReport` instead (see this component's
+  // doc comment), so the filter is hidden for them.
+  const canFilterByUser = canManageReports(user?.role) && !isProjectScopedReportManager(user?.role);
 
   const defaultRange = useMemo(() => getCurrentMonthToDateRange(), []);
   const [draftFilters, setDraftFilters] = useState<DraftFilters>({

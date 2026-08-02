@@ -42,17 +42,20 @@ function formatMoney(value: number, symbol: string | undefined): string {
  * (`app/(dashboard)/invoices/page.tsx`) — see
  * `lib/constants/invoice.constants.ts` for the rationale. Fetches live data
  * via `useInvoiceList` (TanStack Query -> `lib/api/invoice.api.ts` ->
- * `/api/invoices` Route Handler -> the .NET backend's `Invoice/GetAllInvoices`).
+ * `/api/invoices` Route Handler -> the .NET backend). That Route Handler
+ * itself splits by role (`isProjectScopedInvoiceManager`): `Invoice/GetMyInvoices`
+ * for a `ProjectAdmin`, `Invoice/GetAllInvoices` for `SystemAdmin` — this
+ * component and `useInvoiceList` are unaware of which one served the request.
  *
  * The status "chips" are computed from a second, unfiltered-by-status
- * `useInvoiceList` call (capped at 100 rows, since `Invoice/GetAllInvoices`
- * has no dedicated "counts by status" endpoint) so the counts stay accurate
+ * `useInvoiceList` call (capped at 100 rows, since neither backend endpoint
+ * has a dedicated "counts by status" endpoint) so the counts stay accurate
  * even while the table itself is filtered to a single status.
  *
  * Unlike the reference-data tables (`CountriesListView`, `CurrenciesListView`,
  * etc.), this table's rows are paginated server-side — `page`/`pageSize` are
- * sent straight through to `Invoice/GetAllInvoices` via `tableFilters` below
- * — rather than via `hooks/useTablePagination.ts`'s client-side slicing. Per
+ * sent straight through to the backend via `tableFilters` below — rather
+ * than via `hooks/useTablePagination.ts`'s client-side slicing. Per
  * the `bugs/paginations` feature request, the Previous/Next/page-number
  * controls themselves still render through the shared
  * `components/ui/TablePagination.tsx` (`react-paginate`-backed), the same

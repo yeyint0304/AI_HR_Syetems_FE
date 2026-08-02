@@ -65,8 +65,16 @@ describe("TimesheetReportView", () => {
     expect(screen.queryByLabelText(/user id/i)).not.toBeInTheDocument();
   });
 
-  it("renders the User ID filter for a ProjectAdmin", () => {
+  it("does not render the User ID filter for a ProjectAdmin (self/team-scoped GenerateMyTimesheetReport has no userId param)", () => {
     useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
+    mockApi();
+    renderWithClient(<TimesheetReportView />);
+
+    expect(screen.queryByLabelText(/user id/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the User ID filter for a SystemAdmin", () => {
+    useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
     mockApi();
     renderWithClient(<TimesheetReportView />);
 

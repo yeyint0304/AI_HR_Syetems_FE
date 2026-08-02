@@ -1,4 +1,8 @@
-import { canManageInvoices, INVOICE_STATUSES } from "@/lib/constants/invoice.constants";
+import {
+  canManageInvoices,
+  INVOICE_STATUSES,
+  isProjectScopedInvoiceManager,
+} from "@/lib/constants/invoice.constants";
 
 describe("invoice.constants", () => {
   describe("canManageInvoices", () => {
@@ -26,5 +30,21 @@ describe("invoice.constants", () => {
 
   it("documents every backend-supported invoice status", () => {
     expect(INVOICE_STATUSES).toEqual(["Draft", "Sent", "Paid", "Void", "Cancelled"]);
+  });
+
+  describe("isProjectScopedInvoiceManager", () => {
+    it("is true for ProjectAdmin", () => {
+      expect(isProjectScopedInvoiceManager("ProjectAdmin")).toBe(true);
+    });
+
+    it("is false for SystemAdmin", () => {
+      expect(isProjectScopedInvoiceManager("SystemAdmin")).toBe(false);
+    });
+
+    it("is false for a plain User or null/undefined role", () => {
+      expect(isProjectScopedInvoiceManager("User")).toBe(false);
+      expect(isProjectScopedInvoiceManager(null)).toBe(false);
+      expect(isProjectScopedInvoiceManager(undefined)).toBe(false);
+    });
   });
 });

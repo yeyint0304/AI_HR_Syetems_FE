@@ -65,3 +65,43 @@ export interface TimesheetEntryListFilters {
   timesheetPeriodId?: string;
   isApproved?: boolean;
 }
+
+/**
+ * Per-project rollup within `ProjectAdminTimesheetSummary.projectSummaries`,
+ * per `TimesheetEntry/GetProjectAdminTimesheetSummary`'s saved example
+ * (`docs/HR_System_BE.postman_collection.json`).
+ */
+export interface TimesheetProjectSummary {
+  projectId: string;
+  projectCode?: string;
+  projectName?: string;
+  totalHours: number;
+  approvedHours: number;
+  pendingHours: number;
+}
+
+/**
+ * Matches `TimesheetEntry/GetProjectAdminTimesheetSummary`'s response shape —
+ * a `ProjectAdmin`-facing summary/entry-list endpoint, distinct from the
+ * org-wide `TimesheetEntry/GetAllTimesheetEntries` a `SystemAdmin` uses (see
+ * `components/timesheets/TimesheetHistoryView.tsx`).
+ */
+export interface ProjectAdminTimesheetSummary {
+  totalHours: number;
+  approvedHours: number;
+  pendingHours: number;
+  projectSummaries: TimesheetProjectSummary[];
+  entries: TimesheetEntry[];
+}
+
+/**
+ * Query filter for `TimesheetEntry/GetProjectAdminTimesheetSummary`. The
+ * backend's only documented example (`docs/HR_System_BE.postman_collection.json`)
+ * always supplies `projectId`, but it's treated as optional here, consistent
+ * with every other Timesheet Entry list filter (`TimesheetEntryListFilters`)
+ * and this screen's existing "All Projects" filter option — omitting it is
+ * read as "every project this Project Admin manages".
+ */
+export interface ProjectAdminTimesheetSummaryFilters {
+  projectId?: string;
+}

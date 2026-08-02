@@ -24,6 +24,23 @@ export function canManageInvoices(role: string | null | undefined): boolean {
   return (INVOICE_MANAGER_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * Returns true if the given role's invoice *list* must be backed by the
+ * backend's project-scoped `Invoice/GetMyInvoices` rather than the org-wide
+ * `Invoice/GetAllInvoices` (see `app/api/invoices/route.ts`'s `GET` handler).
+ *
+ * Per this app's API-integration requirement, a `ProjectAdmin` reviewing
+ * invoices is powered by `GetMyInvoices` (scoped to the projects they manage,
+ * mirroring `isProjectScopedTimesheetManager` in
+ * `lib/constants/timesheetEntry.constants.ts`), while `SystemAdmin` — the
+ * org-wide administrator role — keeps the unrestricted `GetAllInvoices`.
+ * `GenerateInvoice` (invoice creation) is unaffected and remains shared by
+ * both roles.
+ */
+export function isProjectScopedInvoiceManager(role: string | null | undefined): boolean {
+  return role === USER_ROLES.PROJECT_ADMIN;
+}
+
 /** All statuses documented on `Invoice/GetAllInvoices` (`?status=`). */
 export const INVOICE_STATUSES: InvoiceStatus[] = ["Draft", "Sent", "Paid", "Void", "Cancelled"];
 
