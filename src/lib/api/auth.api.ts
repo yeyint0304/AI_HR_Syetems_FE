@@ -63,8 +63,8 @@ export async function getRolesRequest(): Promise<Role[]> {
  * (`components/ui/SearchableSelectField.tsx`,
  * `hooks/useAuth.ts#useUnassignedUsersInfinite`). Proxies through this app's
  * own `/api/auth/unassigned-users` Route Handler, which in turn calls the
- * backend's `Auth/GetUserList` endpoint (see
- * `app/api/auth/unassigned-users/route.ts`).
+ * backend's `Auth/SearchUsers` endpoint, `isAllRole`-scoped by the caller's
+ * role (see `app/api/auth/unassigned-users/route.ts`).
  */
 export async function getUnassignedUsersRequest(
   params: UnassignedUserListParams = {}

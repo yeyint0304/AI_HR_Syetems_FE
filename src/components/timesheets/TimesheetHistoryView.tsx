@@ -87,8 +87,13 @@ function sumHours(entries: TimesheetEntry[]): number {
  *
  * Manager approval workflow: for SystemAdmin/ProjectAdmin (`canManageAnyTimesheetEntry`),
  * this view broadens its scope from "my history" to every user's entries and
- * adds a "User" column plus "Approve"/"Reject" actions on pending entries,
- * calling `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`.
+ * adds a "User" column — showing both the entry owner's name and their
+ * Resource Role on that project (`formatEntryUserName`/`formatEntryResourceRole`,
+ * per the `feature/user-deactivate` request "add a user-info column (Name,
+ * Resource Role)"; the role is resolved from `Project/GetProjectAssignments`,
+ * same as `ProjectAssignmentsView`, since `TimesheetEntry` itself carries no
+ * role field) — plus "Approve"/"Reject" actions on pending entries, calling
+ * `TimesheetEntry/ApproveTimesheetEntry` via `useApproveTimesheetEntry`.
  * This is the review/approval step `INV-01` ("Includes approved entries only" —
  * `docs/HR_System_User_Stories_Backlog.xlsx`) depends on before an entry can
  * be invoiced. There is no "unapprove" endpoint documented, so approval is
@@ -314,14 +319,19 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     return map;
   }, [periods]);
 
-  // Distinct project ids across every fetched entry — only computed for a
-  // project-scoped manager (a `ProjectAdmin`); a plain `User` never sees
-  // Approve/Reject at all, and `SystemAdmin` isn't scoped, so neither needs
-  // this extra round trip.
+  // Distinct project ids across every fetched entry — needed whenever the
+  // signed-in user is a manager (`canApprove`, both `ProjectAdmin` and
+  // `SystemAdmin`): a `ProjectAdmin` needs this for the "own project
+  // (assigned user)" Approve/Reject gate (`assignedProjectIds` below), and
+  // *every* manager needs it to resolve each entry owner's Resource Role for
+  // the "User" column's new Resource Role line (`resourceRoleByProjectUser`
+  // below, per the `feature/user-deactivate` request "add a user-info column
+  // (Name, Resource Role)"). A plain `User` never sees the "User" column or
+  // Approve/Reject at all, so it never needs this extra round trip.
   const managedEntryProjectIds = useMemo(() => {
-    if (!isProjectScopedManager || !entries) return [];
+    if (!canApprove || !entries) return [];
     return Array.from(new Set(entries.map((entry) => entry.projectId)));
-  }, [isProjectScopedManager, entries]);
+  }, [canApprove, entries]);
 
   const assignmentQueries = useProjectAssignmentsForProjects(managedEntryProjectIds);
 
@@ -342,6 +352,26 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     });
     return set;
   }, [isProjectScopedManager, assignmentQueries, managedEntryProjectIds, currentUserId]);
+
+  // `${projectId}::${userId}` -> that user's `resourceRoleTypeName` on that
+  // project, derived from the same `assignmentQueries` fan-out above — backs
+  // the "User" column's Resource Role line (`formatEntryResourceRole`,
+  // below). Built from every distinct project a manager can see entries for,
+  // not just the ones they're personally assigned to (unlike
+  // `assignedProjectIds`), since this only *displays* the owner's role — it
+  // never gates an action.
+  const resourceRoleByProjectUser = useMemo(() => {
+    const map = new Map<string, string>();
+    assignmentQueries.forEach((query, index) => {
+      const projectId = managedEntryProjectIds[index];
+      for (const assignment of query.data ?? []) {
+        if (assignment.resourceRoleTypeName) {
+          map.set(`${projectId}::${assignment.userId}`, assignment.resourceRoleTypeName);
+        }
+      }
+    });
+    return map;
+  }, [assignmentQueries, managedEntryProjectIds]);
 
   const visibleEntries = useMemo(() => {
     if (!entries) return [];
@@ -430,6 +460,19 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   function formatEntryUserName(entry: TimesheetEntry): string {
     const name = `${entry.userFirstName ?? ""} ${entry.userLastName ?? ""}`.trim();
     return name || "—";
+  }
+
+  /**
+   * The entry owner's Resource Role on that entry's project (e.g.
+   * "Developer", "QA Engineer") — the second half of the "User" column's
+   * user-info per the `feature/user-deactivate` request ("add a user-info
+   * column (Name, Resource Role)"). Looked up from `resourceRoleByProjectUser`
+   * (built from `Project/GetProjectAssignments`, the same source
+   * `ProjectAssignmentsView` uses for this field), not from `TimesheetEntry`
+   * itself — the backend's Timesheet Entry endpoints don't return it.
+   */
+  function formatEntryResourceRole(entry: TimesheetEntry): string {
+    return resourceRoleByProjectUser.get(`${entry.projectId}::${entry.userId}`) ?? "—";
   }
 
   async function handleConfirmApprove() {
@@ -688,7 +731,10 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                     <tr key={entry.id}>
                       <td className="px-4 py-3 align-top text-slate-500">{formatDisplayDate(entry.entryDate)}</td>
                       {canApprove && (
-                        <td className="px-4 py-3 align-top text-slate-700">{formatEntryUserName(entry)}</td>
+                        <td className="px-4 py-3 align-top">
+                          <p className="font-medium text-slate-900">{formatEntryUserName(entry)}</p>
+                          <p className="text-xs text-slate-500">{formatEntryResourceRole(entry)}</p>
+                        </td>
                       )}
                       <td className="px-4 py-3 align-top">
                         <p className="font-medium text-slate-900">{entry.projectName ?? "—"}</p>

@@ -128,7 +128,7 @@ export const UNASSIGNED_USERS_QUERY_KEY = ["unassigned-users"] as const;
 /**
  * Safety cap on how many backend pages `useUnassignedUsersInfinite` will
  * fetch for a single search, regardless of what the backend reports via
- * `hasMore`. `Auth/GetUserList` documents no `page`/`pageSize` query
+ * `hasMore`. `Auth/SearchUsers` documents no `page`/`pageSize` query
  * parameters at all (see `app/api/auth/unassigned-users/route.ts`), so a
  * backend deployment that silently ignores `page` could otherwise cause an
  * unbounded fetch loop as the user scrolls (each "next page" request

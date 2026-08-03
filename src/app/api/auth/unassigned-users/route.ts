@@ -6,45 +6,47 @@ import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
 import { mapBackendUnassignedUserPage } from "@/lib/server/authResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageProjects } from "@/lib/constants/project.constants";
+import { UNASSIGNED_USERS_PAGE_SIZE, USER_ROLES } from "@/lib/constants/auth.constants";
 import { unassignedUserQuerySchema } from "@/lib/validators/auth.validators";
-import { UNASSIGNED_USERS_PAGE_SIZE } from "@/lib/constants/auth.constants";
 import type { UnassignedUser } from "@/types/auth.types";
 
 /**
  * GET /api/auth/unassigned-users?search=&page=&pageSize=
  * [Auth][SystemAdmin|ProjectAdmin] Read-only reference data backing the
  * searchable, scroll-paginated "User" combobox on the Project Assignments
- * screen (`Project/AssignResource` requires a `UserId`), sourced from
- * `Auth/GetUserList` per `docs/HR_System_BE.postman_collection.json` (the
- * collection documents this exact call, for this exact purpose, under the
- * folder name "Get Unassigned User List" — the endpoint's *path* is
- * `Auth/GetUserList`; there is no `Auth/GetUnassignedUsers` route on the
- * backend at all, so calling that name 404s/errors every time). Gated to
- * the same `canManageProjects` roles as `GET /api/projects/[id]/assignments`
- * — regular users can't reach the Assignments screen at all, so there's no
- * reason to expose this list to them either.
+ * ("Assign") screen (`Project/AssignResource` requires a `UserId`), sourced
+ * from `Auth/SearchUsers` per `docs/HR_System_BE.postman_collection.json`.
  *
- * Note: `Auth/GetUserList` has no per-project parameter — it returns users
- * with *no* project assignment at all, backend-wide. A user already
- * assigned to a *different* project won't appear here even though they
- * could validly be added to this one too. This is a limitation of the
+ * Per the `feature/user-deactivate` request ("On the Assign page, use
+ * `/api/v1/Auth/SearchUsers` instead of the unassign user endpoint"), this
+ * previously called `Auth/GetUserList` (the collection's own folder name for
+ * that call is "Get Unassigned User List", but its *path* is `GetUserList`)
+ * — it now calls `Auth/SearchUsers` instead, with `isAllRole` derived from
+ * the caller's own role: a `ProjectAdmin` only searches assignable
+ * (non-all-role) users (`isAllRole=false`), while a `SystemAdmin` searches
+ * across every role (`isAllRole=true`), matching the Postman collection's
+ * saved example request for this endpoint.
+ *
+ * Note: neither `GetUserList` nor `SearchUsers` documents a per-project
+ * parameter — both return users backend-wide, not scoped to "not yet
+ * assigned to *this* project". A user already assigned to a *different*
+ * project may still appear here even though re-assigning them to this one
+ * would be rejected by `Project/AssignResource`. This is a limitation of the
  * documented backend contract, not a bug in this Route Handler.
  *
- * `page`/`pageSize`/`search` handling: `Auth/GetUserList` documents *no*
- * query parameters at all (unlike e.g. `Country/GetAllCountries`, whose
- * `?page=&pageSize=` are explicitly documented) — yet the live backend
- * already returns a paginated envelope by default
- * (`Data: { TotalCount, PageNo, PageSize, Items }`, see
+ * `page`/`pageSize` handling: neither endpoint documents these either (unlike
+ * e.g. `Country/GetAllCountries`, whose `?page=&pageSize=` are explicitly
+ * documented) — yet the live backend already returns a paginated envelope by
+ * default (`Data: { TotalCount, PageNo, PageSize, Items }`, see
  * `lib/server/authResponseMappers.ts`). `page`/`pageSize` are forwarded
- * optimistically, following the same naming convention every other
- * paginated endpoint in this backend uses (harmless no-op if ignored: the
- * backend just returns its own default page/size). `search` is forwarded
- * the same way, but — since there is no documented (or precedented, across
- * this entire backend) free-text search parameter for this endpoint — a
+ * optimistically, following the same naming convention every other paginated
+ * endpoint in this backend uses (harmless no-op if ignored). The client's
+ * free-text `search` term is forwarded as `SearchUsers`' `userName` query
+ * param (an email-shaped term is sent as `email` instead) — but since it's
+ * unconfirmed whether the backend actually filters on either, a
  * case-insensitive substring filter is *also* applied here, defensively, so
- * the "User" combobox's search box works correctly even if the backend
- * silently ignores the parameter. Double-filtering already-server-filtered
- * results is a harmless no-op.
+ * the "User" combobox's search box keeps working correctly either way.
+ * Double-filtering already-server-filtered results is a harmless no-op.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -89,9 +91,19 @@ export async function GET(request: Request) {
   const pageSize = parsedQuery.data.pageSize ?? UNASSIGNED_USERS_PAGE_SIZE;
   const search = parsedQuery.data.search;
 
+  // `isAllRole` per the `feature/user-deactivate` request: a `ProjectAdmin`
+  // only searches assignable (non-all-role) users, while a `SystemAdmin`
+  // searches across every role — matching the Postman collection's saved
+  // `Auth/SearchUsers` example (`isAllRole=true`).
+  const isAllRole = currentUser.role === USER_ROLES.SYSTEM_ADMIN;
+  // An email-shaped term is forwarded as `email`; anything else as `userName`
+  // — `Auth/SearchUsers` documents both as separate, independent filters (see
+  // this route's doc comment), so only one is ever sent for a given search.
+  const searchParam = search ? (search.includes("@") ? { email: search } : { userName: search }) : {};
+
   try {
-    const response = await backendApiClient.get("/Auth/GetUserList", {
-      params: { page, pageSize, ...(search ? { search } : {}) },
+    const response = await backendApiClient.get("/Auth/SearchUsers", {
+      params: { page, pageSize, isAllRole, ...searchParam },
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -101,12 +113,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: { ...result, items } }, { status: 200 });
   } catch (error) {
     // Some backend deployments respond 404 Not Found (rather than 200 with an
-    // empty array) from `Auth/GetUserList` when every user is already
-    // assigned to a project — a valid "no results" outcome, not a real error.
-    // Without this, the Project Assignments "Add User to Project" section
-    // surfaced a scary "Unable to load users available to assign" error alert
-    // instead of the friendly "no unassigned users available" empty state
-    // that `ProjectAssignmentsView` already handles for a genuinely empty list.
+    // empty array) from `Auth/SearchUsers` when no user matches — a valid "no
+    // results" outcome, not a real error. Without this, the Project
+    // Assignments "Add User to Project" section surfaced a scary "Unable to
+    // load users available to assign" error alert instead of the friendly "no
+    // unassigned users available" empty state that `ProjectAssignmentsView`
+    // already handles for a genuinely empty list.
     if (axios.isAxiosError(error) && error.response?.status === 404) {
       return NextResponse.json(
         { data: { items: [], page, pageSize, totalCount: 0, hasMore: false } },

@@ -78,13 +78,24 @@ describe("GET /api/projects/[id]/assignments", () => {
     expect(backendApiClient.get).not.toHaveBeenCalled();
   });
 
-  it("403s when the caller's role may not manage projects", async () => {
+  // Unlike `POST` (assigning is manager-only), `GET` is intentionally open to
+  // any authenticated role — a plain Employee needs this to know whether
+  // *they* are an assigned resource on a project (`MyTimesheetView`'s
+  // loggable-projects scoping). See the route's doc comment for the
+  // "employee does not appear" regression this fixes.
+  it("does not 403 a non-manager role — any authenticated user may view assignments", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(nonManagerToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: [] },
+    });
 
     const response = await GET(new Request("http://localhost/api/projects/1/assignments"), routeParams("1"));
 
-    expect(response.status).toBe(403);
-    expect(backendApiClient.get).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Project/GetProjectAssignments/1",
+      expect.objectContaining({ headers: { Authorization: `Bearer ${nonManagerToken}` } })
+    );
   });
 
   it("returns the assignment list, unwrapping the backend's Data envelope", async () => {

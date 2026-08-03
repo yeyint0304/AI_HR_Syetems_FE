@@ -8,7 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
-import { useDeleteProject, useProjectList } from "@/hooks/useProjects";
+import { useDeleteProject, useProjectSelectOptions } from "@/hooks/useProjects";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { canManageProjects } from "@/lib/constants/project.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
@@ -23,9 +23,14 @@ function matchesSearch(project: Project, term: string): boolean {
 
 /**
  * `/projects` — list/search/manage client projects, per the wireframe
- * (`docs/HR_System_FE_wireframe.pdf`). Fetches live data via `useProjectList`
- * (TanStack Query -> `lib/api/project.api.ts` -> `/api/projects` Route
- * Handler -> the .NET backend's `Project/GetProjectList`).
+ * (`docs/HR_System_FE_wireframe.pdf`). Fetches live data via
+ * `useProjectSelectOptions` (TanStack Query -> `lib/api/project.api.ts` ->
+ * `/api/projects` or `/api/projects/my` Route Handler -> the .NET backend's
+ * `Project/GetProjectList`/`Project/GetMyProjectList`) — a `SystemAdmin` sees
+ * the full org-wide catalog, while a `ProjectAdmin`/`Employee` only ever sees
+ * their *own* project(s) (the ones they manage/are assigned to), matching the
+ * `feature/user-deactivate` request that this page ("Project pages") only
+ * ever surface a signed-in user's own projects unless they're a SystemAdmin.
  */
 export function ProjectsListView() {
   const { user } = useAuth();
@@ -35,7 +40,7 @@ export function ProjectsListView() {
   const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const { data: projects, isLoading, isError, error, refetch } = useProjectList();
+  const { data: projects, isLoading, isError, error, refetch } = useProjectSelectOptions();
   const deleteProjectMutation = useDeleteProject();
 
   const filteredProjects = useMemo(() => {

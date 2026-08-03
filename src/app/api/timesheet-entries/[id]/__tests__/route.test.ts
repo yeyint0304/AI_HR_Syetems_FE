@@ -228,36 +228,31 @@ describe("PUT /api/timesheet-entries/[id]", () => {
     );
   });
 
-  it("403s when a ProjectAdmin edits another user's entry on a project they are not assigned to", async () => {
+  // Editing is strictly owner-only (see the route's doc comment) — a
+  // ProjectAdmin/SystemAdmin may Approve/Reject another user's entry for a
+  // managed project, but never edit it, regardless of project assignment.
+  it("403s when a ProjectAdmin edits another user's entry, even on a project they are assigned to", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
-    (backendApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
-      .mockResolvedValueOnce(assignmentsEnvelope([])); // not an assigned resource
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }));
 
     const response = await PUT(putRequest(validUpdatePayload), routeParams("1"));
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body.message).toMatch(/do not have permission/i);
+    expect(body.message).toMatch(/only edit your own/i);
     expect(backendApiClient.put).not.toHaveBeenCalled();
+    // No project-assignment lookup should even occur for editing.
+    expect(backendApiClient.get).toHaveBeenCalledTimes(1);
   });
 
-  it("allows a ProjectAdmin to edit another user's entry on a project they are assigned to", async () => {
-    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
-    (backendApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
-      .mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
-    (backendApiClient.put as jest.Mock).mockResolvedValueOnce({
-      data: { StatusCode: 200, IsSuccess: true, Message: "Timesheet entry updated successfully.", Data: null },
-    });
+  it("403s when a SystemAdmin edits another user's entry", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(adminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }));
 
-    const response = await PUT(
-      putRequest(validUpdatePayload),
-      routeParams("b365fa4d-6a30-4c5b-ae33-6161d9f81328")
-    );
+    const response = await PUT(putRequest(validUpdatePayload), routeParams("1"));
 
-    expect(response.status).toBe(200);
-    expect(backendApiClient.put).toHaveBeenCalled();
+    expect(response.status).toBe(403);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
   });
 
   it("updates the entry after confirming ownership", async () => {

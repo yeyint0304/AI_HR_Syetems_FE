@@ -94,7 +94,7 @@ export function EditUserForm({ user, isSelf = false, onSuccess, onCancel }: Edit
         firstName: values.firstName,
         lastName: values.lastName,
         employeeId: values.employeeId || undefined,
-        countryId: values.countryId || null,
+        countryId: values.countryId,
         // Defense in depth: the "Status" field is disabled (and hidden from
         // interaction) whenever `isSelf` is true — this just guarantees the
         // submitted payload can never carry a stray `false` even if the
@@ -211,7 +211,6 @@ export function EditUserForm({ user, isSelf = false, onSuccess, onCancel }: Edit
             onChange={field.onChange}
             isLoading={isCountriesLoading}
             disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
-            hint="Optional."
             error={errors.countryId?.message}
           />
         )}

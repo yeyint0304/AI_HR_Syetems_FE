@@ -495,6 +495,40 @@ describe("TimesheetHistoryView", () => {
       expect(within(otherUsersRow).queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
     });
 
+    // Per the `feature/user-deactivate` request ("add a user-info column
+    // (Name, Resource Role)") — the "User" column shows both the entry
+    // owner's name and their Resource Role on that project, resolved from
+    // `Project/GetProjectAssignments` (same source `ProjectAssignmentsView`
+    // uses), since `TimesheetEntry` itself carries no role field.
+    it("shows the entry owner's Resource Role alongside their name in the User column", async () => {
+      mockApi({
+        entries: [OTHER_USER_PENDING_ENTRY],
+        assignments: {
+          [PROJECT_ID]: [
+            { id: "a1", userId: OTHER_USER_ID, resourceRoleTypeId: "r1", resourceRoleTypeName: "Developer" },
+          ],
+        },
+      });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const table = await screen.findByRole("table");
+      const otherUsersRow = within(table).getByText("Alex Kumar").closest("tr");
+      if (!otherUsersRow) throw new Error("Could not find Alex Kumar's row");
+
+      expect(within(otherUsersRow).getByText("Developer")).toBeInTheDocument();
+    });
+
+    it("shows a placeholder in the User column when the owner's Resource Role can't be resolved", async () => {
+      mockApi({ entries: [OTHER_USER_PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const table = await screen.findByRole("table");
+      const otherUsersRow = within(table).getByText("Alex Kumar").closest("tr");
+      if (!otherUsersRow) throw new Error("Could not find Alex Kumar's row");
+
+      expect(within(otherUsersRow).getByText("—")).toBeInTheDocument();
+    });
+
     it("shows Edit, Approve, and Reject together for the manager's own pending entry", async () => {
       mockApi({ entries: [PENDING_ENTRY] });
       renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);

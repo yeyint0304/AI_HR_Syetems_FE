@@ -214,4 +214,20 @@ describe("EditUserForm", () => {
     expect(await screen.findByText(/username must be at least 3 characters/i)).toBeInTheDocument();
     expect(apiClient.put).not.toHaveBeenCalled();
   });
+
+  // Per the `feature/user-deactivate` request ("also required on Edit
+  // User"): a legacy user record with no country saved yet (`countryId:
+  // null`, the pre-this-feature shape) must have one selected before saving.
+  it("requires a country to be selected when the user has none saved yet", async () => {
+    mockReferenceData();
+    const user = userEvent.setup();
+    renderWithClient(
+      <EditUserForm user={{ ...USER, countryId: null }} onSuccess={jest.fn()} onCancel={jest.fn()} />
+    );
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/country is required/i)).toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
 });

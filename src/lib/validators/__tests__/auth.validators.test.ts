@@ -116,14 +116,29 @@ describe("resetPasswordSchema", () => {
 });
 
 describe("updateProfileSchema", () => {
-  it("accepts a valid profile payload without a country", () => {
+  // Per the `feature/user-deactivate` request, `countryId` is now required
+  // (previously optional/nullable) — mirrors `createUserSchema`/`updateUserSchema`.
+  it("accepts a valid profile payload with a country", () => {
+    const result = updateProfileSchema.safeParse({
+      firstName: "Jane",
+      lastName: "Doe",
+      email: "jane@example.com",
+      countryId: "aa532dd2-1a51-4be0-b09b-be3d99ea15f3",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a missing country", () => {
     const result = updateProfileSchema.safeParse({
       firstName: "Jane",
       lastName: "Doe",
       email: "jane@example.com",
       countryId: "",
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message === "Country is required.")).toBe(true);
+    }
   });
 
   it("rejects an invalid email", () => {
@@ -131,6 +146,7 @@ describe("updateProfileSchema", () => {
       firstName: "Jane",
       lastName: "Doe",
       email: "not-an-email",
+      countryId: "aa532dd2-1a51-4be0-b09b-be3d99ea15f3",
     });
     expect(result.success).toBe(false);
   });
@@ -144,7 +160,8 @@ describe("createUserSchema", () => {
     firstName: "New",
     lastName: "User",
     employeeId: "",
-    countryId: "",
+    countryId: "aa532dd2-1a51-4be0-b09b-be3d99ea15f3",
+    roleId: "11111111-1111-1111-1111-111111111101",
   };
 
   it("accepts a seeded backend Role id (e.g. SystemAdmin) as roleId", () => {
@@ -152,10 +169,7 @@ describe("createUserSchema", () => {
     // (`docs/HR_System_BE.postman_collection.json`), which fail Zod's
     // stricter `z.uuid()` — this previously left the Create User form stuck
     // showing "Select a role." even after a role had been picked.
-    const result = createUserSchema.safeParse({
-      ...base,
-      roleId: "11111111-1111-1111-1111-111111111101",
-    });
+    const result = createUserSchema.safeParse(base);
     expect(result.success).toBe(true);
   });
 
@@ -164,6 +178,15 @@ describe("createUserSchema", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.message === "Select a role.")).toBe(true);
+    }
+  });
+
+  // Per the `feature/user-deactivate` request ("make country a required field").
+  it("rejects a missing country", () => {
+    const result = createUserSchema.safeParse({ ...base, countryId: "" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message === "Country is required.")).toBe(true);
     }
   });
 });
@@ -175,7 +198,7 @@ describe("updateUserSchema", () => {
     firstName: "Tester",
     lastName: "Sample",
     employeeId: "",
-    countryId: "",
+    countryId: "aa532dd2-1a51-4be0-b09b-be3d99ea15f3",
     isActive: true,
     roleId: "",
   };
@@ -212,6 +235,15 @@ describe("updateUserSchema", () => {
   it("rejects a malformed (non-GUID) roleId", () => {
     const result = updateUserSchema.safeParse({ ...base, roleId: "not-a-guid" });
     expect(result.success).toBe(false);
+  });
+
+  // Per the `feature/user-deactivate` request ("also required on Edit User").
+  it("rejects a missing country", () => {
+    const result = updateUserSchema.safeParse({ ...base, countryId: "" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message === "Country is required.")).toBe(true);
+    }
   });
 });
 

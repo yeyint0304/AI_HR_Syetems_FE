@@ -43,6 +43,12 @@ const projectAdminToken = buildToken({
   role: "ProjectAdmin",
 });
 
+const systemAdminToken = buildToken({
+  sub: "user-3",
+  email: "sysadmin@hrsystem.com",
+  role: "SystemAdmin",
+});
+
 function buildRequest(query = ""): Request {
   return new Request(`http://localhost/api/auth/unassigned-users${query}`);
 }
@@ -122,11 +128,25 @@ describe("GET /api/auth/unassigned-users", () => {
       hasMore: false,
     });
     expect(backendApiClient.get).toHaveBeenCalledWith(
-      "/Auth/GetUserList",
+      "/Auth/SearchUsers",
       expect.objectContaining({
-        params: { page: 1, pageSize: 20 },
+        params: { page: 1, pageSize: 20, isAllRole: false },
         headers: { Authorization: `Bearer ${projectAdminToken}` },
       })
+    );
+  });
+
+  it("requests isAllRole=true for a SystemAdmin caller", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: [] },
+    });
+
+    await GET(buildRequest());
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Auth/SearchUsers",
+      expect.objectContaining({ params: { page: 1, pageSize: 20, isAllRole: true } })
     );
   });
 
@@ -176,8 +196,24 @@ describe("GET /api/auth/unassigned-users", () => {
       hasMore: true,
     });
     expect(backendApiClient.get).toHaveBeenCalledWith(
-      "/Auth/GetUserList",
-      expect.objectContaining({ params: { page: 2, pageSize: 20, search: "aung" } })
+      "/Auth/SearchUsers",
+      expect.objectContaining({ params: { page: 2, pageSize: 20, isAllRole: false, userName: "aung" } })
+    );
+  });
+
+  it("forwards an email-shaped search term as `email` rather than `userName`", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: [] },
+    });
+
+    await GET(buildRequest("?search=jamie%40hrsystem.com"));
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Auth/SearchUsers",
+      expect.objectContaining({
+        params: { page: 1, pageSize: 20, isAllRole: false, email: "jamie@hrsystem.com" },
+      })
     );
   });
 

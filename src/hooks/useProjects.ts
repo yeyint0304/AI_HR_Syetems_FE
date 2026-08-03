@@ -30,7 +30,15 @@ const MY_PROJECTS_QUERY_KEY = ["projects", "my"] as const;
 const projectQueryKey = (id: string) => ["projects", id] as const;
 const assignmentsQueryKey = (projectId: string) => ["projects", projectId, "assignments"] as const;
 
-/** Full, org-wide project catalog (`Project/GetProjectList`) — backs the `/projects` list page, deliberately unscoped for every role (see `components/projects/ProjectsListView.tsx`). */
+/**
+ * Full, org-wide project catalog (`Project/GetProjectList`). Prefer
+ * `useProjectSelectOptions` below for anything a `ProjectAdmin`/`Employee`
+ * should only see their *own* projects in (e.g. the `/projects` list page,
+ * per the `feature/user-deactivate` request) — this unscoped hook remains
+ * for the few call sites that are intentionally org-wide regardless of role
+ * (e.g. `MyTimesheetView`'s "log time" project picker, which every role uses
+ * to log time against *any* active project, not just their assignments).
+ */
 export function useProjectList() {
   return useQuery({
     queryKey: PROJECTS_QUERY_KEY,
