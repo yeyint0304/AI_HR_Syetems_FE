@@ -7,7 +7,7 @@ import { SelectField } from "@/components/ui/SelectField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { TextField } from "@/components/ui/TextField";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useTimesheetReport } from "@/hooks/useReports";
 import { buildTimesheetReportExportUrl } from "@/lib/api/report.api";
 import {
@@ -99,7 +99,12 @@ export function TimesheetReportView() {
   const [appliedFilters, setAppliedFilters] = useState<TimesheetReportFilters | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
 
-  const { data: projects, isLoading: isProjectsLoading } = useProjectList();
+  // Scoped to "my projects" for ProjectAdmin/Employee, full catalog for
+  // SystemAdmin — see `hooks/useProjects.ts#useProjectSelectOptions` — so the
+  // Project filter never offers a project outside what
+  // `Report/GenerateMyTimesheetReport`/`Report/GenerateTimesheetReport`
+  // actually covers for the signed-in role.
+  const { data: projects, isLoading: isProjectsLoading } = useProjectSelectOptions();
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -204,6 +209,12 @@ export function TimesheetReportView() {
             onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectId: event.target.value }))}
             options={sortedProjects.map((project) => ({ value: project.id, label: project.name }))}
             placeholder={isProjectsLoading ? "Loading projects…" : "All Projects"}
+            // "All Projects" is a real, re-selectable filter value, not just an
+            // initial hint — without this, `SelectField`'s default `disabled`
+            // placeholder becomes permanently unreachable once a specific
+            // project is chosen (see `components/ui/SelectField.tsx`'s
+            // `placeholderDisabled` doc comment).
+            placeholderDisabled={false}
             disabled={isProjectsLoading}
           />
         </div>
@@ -216,6 +227,7 @@ export function TimesheetReportView() {
             }
             options={STATUS_OPTIONS}
             placeholder="All Statuses"
+            placeholderDisabled={false}
           />
         </div>
         {canFilterByUser && (

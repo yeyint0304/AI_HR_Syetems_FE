@@ -222,6 +222,10 @@ export function RateCardsListView() {
               value={countryFilter}
               onChange={(event) => setCountryFilter(event.target.value)}
               placeholder="All Countries"
+              // "All Countries" must stay re-selectable after picking a
+              // specific country — see `components/ui/SelectField.tsx`'s
+              // `placeholderDisabled` doc comment.
+              placeholderDisabled={false}
               options={(countries ?? []).map((country) => ({
                 value: country.id,
                 label: `${country.name} (${country.code})`,

@@ -20,6 +20,19 @@ export async function getProjectListRequest(): Promise<Project[]> {
   return data.data;
 }
 
+/**
+ * Fetches the signed-in user's own, scoped project list (backend
+ * `Project/GetMyProjectList`, via `GET /api/projects/my`) — a `ProjectAdmin`
+ * gets the project(s) they manage, an `Employee` gets the project(s) they're
+ * assigned to. Feeds "Project" filter/select dropdowns (see
+ * `hooks/useProjects.ts#useProjectSelectOptions`) rather than the org-wide
+ * catalog `getProjectListRequest` powers.
+ */
+export async function getMyProjectListRequest(): Promise<Project[]> {
+  const { data } = await apiClient.get<{ data: Project[] }>("/projects/my");
+  return data.data;
+}
+
 export async function getProjectRequest(id: string): Promise<Project> {
   const { data } = await apiClient.get<{ data: Project }>(`/projects/${id}`);
   return data.data;

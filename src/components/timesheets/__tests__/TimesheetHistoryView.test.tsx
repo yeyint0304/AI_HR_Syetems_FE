@@ -124,7 +124,7 @@ function mockApi({
 }: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
-    if (url === "/projects") return Promise.resolve({ data: { data: projects } });
+    if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: projects } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
     // ProjectAdmin's dedicated summary endpoint (`GetProjectAdminTimesheetSummary`) —
     // `entries` is reused here so every existing entries-based assertion works
@@ -189,7 +189,7 @@ describe("TimesheetHistoryView", () => {
         });
       }
       if (url === "/timesheet-periods") return Promise.resolve({ data: { data: [PERIOD] } });
-      if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [PROJECT] } });
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
     renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
@@ -824,6 +824,41 @@ describe("TimesheetHistoryView", () => {
         expect(apiClient.get).toHaveBeenCalledWith(`/projects/${PROJECT_ID}/assignments`)
       );
       expect(apiClient.get).not.toHaveBeenCalledWith(`/projects/${OTHER_PROJECT_ID}/assignments`);
+    });
+  });
+
+  describe("Project filter scoping", () => {
+    it("loads the Project filter's options from /projects/my for a ProjectAdmin", async () => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "pa@hrsystem.com", role: USER_ROLES.PROJECT_ADMIN },
+      });
+      mockApi();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+    });
+
+    it("loads the Project filter's options from /projects/my for a plain Employee", async () => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "employee@hrsystem.com", role: USER_ROLES.EMPLOYEE },
+      });
+      mockApi();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+    });
+
+    it("loads the Project filter's options from the org-wide /projects for a SystemAdmin", async () => {
+      useAuthStore.setState({
+        user: { id: CURRENT_USER_ID, email: "admin@hrsystem.com", role: USER_ROLES.SYSTEM_ADMIN },
+      });
+      mockApi();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
     });
   });
 });

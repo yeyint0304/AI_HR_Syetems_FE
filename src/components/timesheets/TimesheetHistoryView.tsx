@@ -10,7 +10,7 @@ import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjectAssignmentsForProjects, useProjectList } from "@/hooks/useProjects";
+import { useProjectAssignmentsForProjects, useProjectSelectOptions } from "@/hooks/useProjects";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
@@ -225,13 +225,18 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   const [pendingRejectEntry, setPendingRejectEntry] = useState<TimesheetEntry | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
 
+  // Feeds only the "Project" filter dropdown below (`sortedProjects`) — scoped
+  // to "my projects" for ProjectAdmin/Employee, full catalog for SystemAdmin
+  // (see `hooks/useProjects.ts#useProjectSelectOptions`). Unrelated to
+  // `managedEntryProjectIds`/`assignmentQueries` further down, which derive
+  // from the *fetched entries* themselves, not this list.
   const {
     data: projects,
     isLoading: isProjectsLoading,
     isError: isProjectsError,
     error: projectsError,
     refetch: refetchProjects,
-  } = useProjectList();
+  } = useProjectSelectOptions();
   const {
     data: periods,
     isLoading: isPeriodsLoading,

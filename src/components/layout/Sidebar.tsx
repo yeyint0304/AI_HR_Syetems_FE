@@ -6,11 +6,25 @@ import { LogoutButton } from "@/components/auth/LogoutButton";
 import { NAV_SECTIONS } from "@/lib/constants/navigation.constants";
 import { getFullName, getUserInitials } from "@/lib/utils/userDisplay";
 import type { AuthUser } from "@/types/auth.types";
+import type { UserRole } from "@/lib/constants/auth.constants";
 
 interface SidebarProps {
   user: AuthUser | null;
   /** Invoked after a real navigation link is clicked — used to close the mobile drawer. */
   onNavigate?: () => void;
+}
+
+/**
+ * Type-safe wrapper around `hiddenForRoles?.includes(role)` — `AuthUser.role`
+ * is typed as `UserRole | string` (a decoded JWT claim isn't guaranteed to be
+ * one of the known roles), which widens to plain `string` and isn't directly
+ * assignable to `Array<UserRole>.includes`'s parameter. Mirrors the existing
+ * `(ROLES as readonly string[]).includes(role)` idiom already used by
+ * `lib/constants/report.constants.ts#canManageReports` and friends.
+ */
+function isHiddenForRole(hiddenForRoles: UserRole[] | undefined, role: string | undefined | null): boolean {
+  if (!hiddenForRoles || !role) return false;
+  return (hiddenForRoles as readonly string[]).includes(role);
 }
 
 /**
@@ -51,9 +65,23 @@ export function Sidebar({ user, onNavigate }: SidebarProps) {
   // for the shared resolution order.
   const displayName = getFullName(user) || "Guest";
 
+  // Section-level gating: `requiredRole` allow-lists a single role (e.g.
+  // Administration); `hiddenForRoles` deny-lists specific roles (e.g. Reports/
+  // Billing hidden from a plain `Employee`) — see
+  // `lib/constants/navigation.constants.ts`'s doc comment.
   const visibleSections = NAV_SECTIONS.filter(
-    (section) => !section.requiredRole || user?.role === section.requiredRole
-  );
+    (section) =>
+      (!section.requiredRole || user?.role === section.requiredRole) &&
+      !isHiddenForRole(section.hiddenForRoles, user?.role)
+  )
+    // Item-level gating narrows an otherwise-visible section further (e.g.
+    // "Timesheet Periods" hidden from `Employee` while "Projects"/"My
+    // Timesheets"/"Timesheet History" stay visible in the same section).
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !isHiddenForRole(item.hiddenForRoles, user?.role)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const implementedHrefs = visibleSections.flatMap((section) =>
     section.items.filter((item) => item.implemented).map((item) => item.href)

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UserRolesSummaryView } from "@/components/reports/UserRolesSummaryView";
 import { apiClient } from "@/lib/api/axiosInstance";
+import { useAuthStore } from "@/stores/auth.store";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -27,7 +28,7 @@ function mockApi({
   summary = { startDate: "2026-07-01", endDate: "2026-07-20", grandTotalHours: 0, summary: [] },
 }: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url === "/projects") return Promise.resolve({ data: { data: projects } });
+    if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: projects } });
     if (url === "/reports/roles-summary") return Promise.resolve({ data: { data: summary } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -36,6 +37,7 @@ function mockApi({
 describe("UserRolesSummaryView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
   });
 
   it("prompts the user to apply filters before generating the summary", () => {
@@ -47,7 +49,7 @@ describe("UserRolesSummaryView", () => {
 
   it("shows a loading state while the summary is being generated", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/roles-summary") return new Promise(() => {}); // never resolves
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
@@ -80,7 +82,7 @@ describe("UserRolesSummaryView", () => {
 
   it("shows an error state with retry when the request fails", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/roles-summary") {
         return Promise.reject({
           isAxiosError: true,
@@ -211,5 +213,36 @@ describe("UserRolesSummaryView", () => {
 
     expect(await screen.findByText(/date from must be on or before date to/i)).toBeInTheDocument();
     await waitFor(() => expect(apiClient.get).not.toHaveBeenCalledWith("/reports/roles-summary", expect.anything()));
+  });
+
+  it("loads the Project filter's options from /projects/my for a ProjectAdmin before any summary is generated", async () => {
+    mockApi();
+    renderWithClient(<UserRolesSummaryView />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+  });
+
+  it("loads the Project filter's options from the org-wide /projects for a SystemAdmin", async () => {
+    useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    mockApi();
+    renderWithClient(<UserRolesSummaryView />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
+  });
+
+  it("lets the user pick a specific project, then switch back to 'All Projects'", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderWithClient(<UserRolesSummaryView />);
+
+    await screen.findByRole("option", { name: "Project Alpha" });
+    const projectSelect = screen.getByLabelText("Project");
+    await user.selectOptions(projectSelect, "Project Alpha");
+    expect(projectSelect).toHaveValue(PROJECT.id);
+
+    await user.selectOptions(projectSelect, "All Projects");
+    expect(projectSelect).toHaveValue("");
   });
 });

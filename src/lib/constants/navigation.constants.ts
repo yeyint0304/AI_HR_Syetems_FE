@@ -42,7 +42,13 @@ import { USER_ROLES, type UserRole } from "@/lib/constants/auth.constants";
  * `Invoices` has no `requiredRole` at the section level (matching the
  * wireframe, where ProjectAdmin "Sarah Chen" also sees the Billing section),
  * but each `/invoices*` page independently redirects non-SystemAdmin/ProjectAdmin
- * visitors — see `lib/constants/invoice.constants.ts`.
+ * visitors — see `lib/constants/invoice.constants.ts`. Per a later feature
+ * request, `Reports` and `Billing` are additionally hidden from the sidebar
+ * entirely for a plain `Employee` (`hiddenForRoles`), and the "Timesheet
+ * Periods" item is hidden from them too while the rest of the "Timesheet"
+ * section remains visible — `NavSection.hiddenForRoles`/`NavItem.hiddenForRoles`
+ * are UX-layer only, mirroring the existing server-side role checks each
+ * destination page/Route Handler already enforces independently.
  *
  * The wireframe's `/admin/users` is a full "User Management" list (all users,
  * role badges, an "Add User" button) — backed by `Auth/GetUserList`
@@ -85,6 +91,13 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   implemented: boolean;
+  /**
+   * Roles this single item is hidden from, even though the rest of its
+   * section remains visible (e.g. "Timesheet Periods" hidden from `Employee`
+   * within the otherwise-visible "Timesheet" section). Use `NavSection.requiredRole`
+   * instead when an entire section should be gated.
+   */
+  hiddenForRoles?: UserRole[];
 }
 
 export interface NavSection {
@@ -93,6 +106,8 @@ export interface NavSection {
   items: NavItem[];
   /** Restricts the whole section to a single role, e.g. Administration. */
   requiredRole?: UserRole;
+  /** Hides the entire section from the given roles (e.g. Reports/Billing hidden from `Employee`). */
+  hiddenForRoles?: UserRole[];
 }
 
 export const NAV_SECTIONS: NavSection[] = [
@@ -109,6 +124,13 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/timesheet-periods",
         icon: CalendarRange,
         implemented: true,
+        // Per the feature request, a plain `Employee` never manages/locks
+        // timesheet periods (`TIMESHEET_PERIOD_MANAGER_ROLES` is
+        // SystemAdmin/ProjectAdmin-only — see
+        // `lib/constants/timesheetPeriod.constants.ts`), so this entry is
+        // hidden from their sidebar even though the rest of the "Timesheet"
+        // section (Projects/My Timesheets/Timesheet History) still applies.
+        hiddenForRoles: [USER_ROLES.EMPLOYEE],
       },
       { label: "My Timesheets", href: "/timesheets", icon: Timer, implemented: true },
       { label: "Timesheet History", href: "/timesheets/history", icon: History, implemented: true },
@@ -116,10 +138,18 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Reports",
+    // Per the feature request, a plain `Employee` no longer sees the
+    // "Reports" entry in the sidebar at all.
+    hiddenForRoles: [USER_ROLES.EMPLOYEE],
     items: [{ label: "Reports", href: "/reports", icon: BarChart3, implemented: true }],
   },
   {
     label: "Billing",
+    // Per the feature request, a plain `Employee` no longer sees the
+    // "Invoices" entry in the sidebar at all (mirrors `INVOICE_MANAGER_ROLES`
+    // — see `lib/constants/invoice.constants.ts` — already excluding them
+    // from the `/invoices` page itself).
+    hiddenForRoles: [USER_ROLES.EMPLOYEE],
     items: [{ label: "Invoices", href: "/invoices", icon: Receipt, implemented: true }],
   },
   {

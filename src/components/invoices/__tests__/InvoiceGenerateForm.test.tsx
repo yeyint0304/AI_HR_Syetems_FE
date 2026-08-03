@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InvoiceGenerateForm } from "@/components/invoices/InvoiceGenerateForm";
 import { apiClient } from "@/lib/api/axiosInstance";
+import { useAuthStore } from "@/stores/auth.store";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -40,7 +41,7 @@ function mockGetResponses(
   currencies: unknown[] = [CURRENCY_SGD, CURRENCY_USD]
 ) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT_ALPHA] } });
+    if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [PROJECT_ALPHA] } });
     if (url === "/currencies") return Promise.resolve({ data: { data: currencies } });
     if (url === "/timesheet-entries") return Promise.resolve({ data: { data: approvedEntries } });
     return Promise.reject(new Error(`Unhandled GET ${url}`));
@@ -59,6 +60,7 @@ describe("InvoiceGenerateForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearchParams = new URLSearchParams();
+    useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
   });
 
   it("renders all fields and pre-selects the base currency once loaded", async () => {
@@ -237,5 +239,22 @@ describe("InvoiceGenerateForm", () => {
 
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries", expect.anything()));
     expect(screen.queryByText(/no approved timesheet entries were found for this project/i)).not.toBeInTheDocument();
+  });
+
+  it("loads the Project select's options from /projects/my for a ProjectAdmin", async () => {
+    mockGetResponses();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+  });
+
+  it("loads the Project select's options from the org-wide /projects for a SystemAdmin", async () => {
+    useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    mockGetResponses();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
   });
 });

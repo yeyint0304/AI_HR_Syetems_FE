@@ -5,13 +5,14 @@ import {
   assignResourceRequest,
   createProjectRequest,
   deleteProjectRequest,
+  getMyProjectListRequest,
   getProjectAssignmentsRequest,
   getProjectListRequest,
   getProjectRequest,
   removeResourceRequest,
   updateProjectRequest,
 } from "@/lib/api/project.api";
-import { UNASSIGNED_USERS_QUERY_KEY } from "@/hooks/useAuth";
+import { useAuth, UNASSIGNED_USERS_QUERY_KEY } from "@/hooks/useAuth";
 import type {
   AssignResourceRequest,
   CreateProjectRequest,
@@ -25,14 +26,52 @@ import type {
  */
 
 const PROJECTS_QUERY_KEY = ["projects"] as const;
+const MY_PROJECTS_QUERY_KEY = ["projects", "my"] as const;
 const projectQueryKey = (id: string) => ["projects", id] as const;
 const assignmentsQueryKey = (projectId: string) => ["projects", projectId, "assignments"] as const;
 
+/** Full, org-wide project catalog (`Project/GetProjectList`) — backs the `/projects` list page, deliberately unscoped for every role (see `components/projects/ProjectsListView.tsx`). */
 export function useProjectList() {
   return useQuery({
     queryKey: PROJECTS_QUERY_KEY,
     queryFn: getProjectListRequest,
   });
+}
+
+/** The signed-in user's own, scoped project list (`Project/GetMyProjectList`) — see `lib/api/project.api.ts#getMyProjectListRequest`. */
+export function useMyProjectList() {
+  return useQuery({
+    queryKey: MY_PROJECTS_QUERY_KEY,
+    queryFn: getMyProjectListRequest,
+  });
+}
+
+/**
+ * Powers every "Project" filter/select dropdown (Reports, Invoices, Timesheet
+ * History) rather than `useProjectList` directly. A `SystemAdmin` filters
+ * across the full org-wide catalog (`useProjectList`); a `ProjectAdmin`/
+ * `Employee` is scoped to only the project(s) they manage/are assigned to
+ * (`useMyProjectList`) — matching the scope their underlying
+ * `Report/GenerateMy*`/`Invoice/GetMyInvoices` backend calls actually cover,
+ * so a manager can never pick a project outside what their report/invoice
+ * request will honor. Only one of the two queries is ever `enabled` at a
+ * time, so no extra request fires for the branch that doesn't apply.
+ */
+export function useProjectSelectOptions() {
+  const { isSystemAdmin } = useAuth();
+
+  const allProjects = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: getProjectListRequest,
+    enabled: isSystemAdmin,
+  });
+  const myProjects = useQuery({
+    queryKey: MY_PROJECTS_QUERY_KEY,
+    queryFn: getMyProjectListRequest,
+    enabled: !isSystemAdmin,
+  });
+
+  return isSystemAdmin ? allProjects : myProjects;
 }
 
 export function useProject(id: string) {
