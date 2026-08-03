@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CostRevenueReportView } from "@/components/reports/CostRevenueReportView";
 import { apiClient } from "@/lib/api/axiosInstance";
+import { useAuthStore } from "@/stores/auth.store";
 
 jest.mock("@/lib/api/axiosInstance", () => ({
   apiClient: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
@@ -27,7 +28,7 @@ function mockApi({
   report = { year: 2026, month: 7, projects: [] },
 }: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url === "/projects") return Promise.resolve({ data: { data: projects } });
+    if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: projects } });
     if (url === "/reports/cost-revenue") return Promise.resolve({ data: { data: report } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -36,6 +37,7 @@ function mockApi({
 describe("CostRevenueReportView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
   });
 
   it("prompts the user to select a month before generating the report", () => {
@@ -81,7 +83,7 @@ describe("CostRevenueReportView", () => {
 
   it("shows a loading state while the report is being generated", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/cost-revenue") return new Promise(() => {}); // never resolves
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
@@ -95,7 +97,7 @@ describe("CostRevenueReportView", () => {
 
   it("shows an error state with retry on request failure", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/cost-revenue") {
         return Promise.reject({
           isAxiosError: true,
@@ -209,5 +211,36 @@ describe("CostRevenueReportView", () => {
       "/reports/cost-revenue",
       expect.objectContaining({ params: expect.objectContaining({ year: 2026, month: 3 }) })
     );
+  });
+
+  it("loads the Project filter's options from /projects/my for a ProjectAdmin before any report is generated", async () => {
+    mockApi();
+    renderWithClient(<CostRevenueReportView />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+  });
+
+  it("loads the Project filter's options from the org-wide /projects for a SystemAdmin", async () => {
+    useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    mockApi();
+    renderWithClient(<CostRevenueReportView />);
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects"));
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
+  });
+
+  it("lets the user pick a specific project, then switch back to 'All Projects'", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderWithClient(<CostRevenueReportView />);
+
+    await screen.findByRole("option", { name: "Project Alpha" });
+    const projectSelect = screen.getByLabelText("Project");
+    await user.selectOptions(projectSelect, "Project Alpha");
+    expect(projectSelect).toHaveValue(PROJECT.id);
+
+    await user.selectOptions(projectSelect, "All Projects");
+    expect(projectSelect).toHaveValue("");
   });
 });

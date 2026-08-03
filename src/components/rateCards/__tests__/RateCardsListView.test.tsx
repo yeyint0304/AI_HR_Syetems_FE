@@ -274,4 +274,17 @@ describe("RateCardsListView", () => {
     expect(await screen.findByText(/set up at least one country/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add rate card/i })).not.toBeInTheDocument();
   });
+
+  it("lets the user pick a specific country in the filter, then switch back to 'All Countries'", async () => {
+    mockApiGet();
+    const user = userEvent.setup();
+    renderWithClient(<RateCardsListView />);
+
+    const countrySelect = await screen.findByLabelText(/filter by country/i);
+    await user.selectOptions(countrySelect, "Singapore (SG)");
+    expect(countrySelect).toHaveValue(COUNTRY_ID);
+
+    await user.selectOptions(countrySelect, "All Countries");
+    expect(countrySelect).toHaveValue("");
+  });
 });

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useUserRolesSummary } from "@/hooks/useReports";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { buildUserRolesSummaryExportUrl } from "@/lib/api/report.api";
@@ -49,7 +49,13 @@ export function UserRolesSummaryView() {
   const [appliedFilters, setAppliedFilters] = useState<UserRolesSummaryFilters | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
 
-  const { data: projects, isLoading: isProjectsLoading } = useProjectList();
+  // Scoped to "my projects" for ProjectAdmin, full catalog for SystemAdmin —
+  // see `hooks/useProjects.ts#useProjectSelectOptions` — so the Project
+  // filter never offers a project outside what `Report/GenerateUserRolesSummary`
+  // actually covers for the signed-in role. This report is restricted to
+  // SystemAdmin/ProjectAdmin (see this component's doc comment), so
+  // `Employee` never reaches this branch.
+  const { data: projects, isLoading: isProjectsLoading } = useProjectSelectOptions();
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -146,6 +152,10 @@ export function UserRolesSummaryView() {
             onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectId: event.target.value }))}
             options={sortedProjects.map((project) => ({ value: project.id, label: project.name }))}
             placeholder={isProjectsLoading ? "Loading projects…" : "All Projects"}
+            // "All Projects" must stay re-selectable after picking a specific
+            // project — see `components/ui/SelectField.tsx`'s
+            // `placeholderDisabled` doc comment.
+            placeholderDisabled={false}
             disabled={isProjectsLoading}
           />
         </div>

@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/timesheetEntryResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
-import { canManagerActOnProjectEntry } from "@/lib/server/timesheetEntryAuthorization";
+import { canApproverActOnEntry } from "@/lib/server/timesheetEntryAuthorization";
 import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 
 interface RouteParams {
@@ -26,14 +26,12 @@ type EntryLookupResult =
  * the sibling `app/api/timesheet-entries/[id]/route.ts` (`PUT`/`DELETE`).
  *
  * Unlike that sibling helper, this deliberately does **not** reject the
- * request when `entry.userId !== currentUser.id`: a SystemAdmin/ProjectAdmin
- * (the only roles that reach this point — see the role check in `PUT` below)
- * is intentionally allowed to approve *any* user's entry, including their
- * own. See the "Self-approval is intentionally permitted" note in
- * `components/timesheets/TimesheetHistoryView.tsx` for the full rationale.
- * This fetch's job is narrower: confirm the entry actually exists and surface
- * a clean 404/409 instead of forwarding a raw backend error for an id that
- * was never valid to begin with.
+ * request based on ownership itself — ownership (and every other
+ * Approve/Reject authorization rule) is `canApproverActOnEntry`'s job, called
+ * separately in `PUT` below once the entry is known to exist. This fetch's
+ * job is narrower: confirm the entry actually exists and surface a clean
+ * 404/409 instead of forwarding a raw backend error for an id that was never
+ * valid to begin with.
  */
 async function fetchEntryForApproval(id: string, accessToken: string): Promise<EntryLookupResult> {
   const response = await backendApiClient.get(`/TimesheetEntry/GetTimesheetEntryById/${id}`, {
@@ -68,12 +66,9 @@ async function fetchEntryForApproval(id: string, accessToken: string): Promise<E
  * entries only") in `docs/HR_System_User_Stories_Backlog.xlsx`.
  *
  * Before calling the backend, `fetchEntryForApproval` confirms the entry
- * exists and is still pending (see that function's doc comment for why this
- * deliberately does not add an ownership restriction — a manager approving
- * their *own* pending entry is an intentional, explicitly requested
- * capability, not a gap): this gives a clean 404 for an unknown id and a 409
- * for a double-approve attempt without relying on the backend's raw error
- * shape for either case.
+ * exists and is still pending: this gives a clean 404 for an unknown id and a
+ * 409 for a double-approve attempt without relying on the backend's raw
+ * error shape for either case.
  *
  * The backend's saved success example only returns
  * `{ Id, IsApproved, ApprovedAt, ApprovedBy }` — not the full entry shape
@@ -83,11 +78,14 @@ async function fetchEntryForApproval(id: string, accessToken: string): Promise<E
  * refetches the list (`useApproveTimesheetEntry`'s cache invalidation
  * handles this).
  *
- * On top of the role check above, approving *someone else's* entry additionally
- * requires `canManagerActOnProjectEntry` (`lib/server/timesheetEntryAuthorization.ts`)
- * — a `ProjectAdmin` must be an assigned resource on that entry's project (the
- * `bugs/timesheet-history` "own project (assigned user)" rule); `SystemAdmin`
- * is exempt. Self-approval never triggers this extra check.
+ * On top of the role check above, every approval additionally requires
+ * `canApproverActOnEntry` (`lib/server/timesheetEntryAuthorization.ts`),
+ * which enforces: never your own entry; a `SystemAdmin`'s entry may only be
+ * approved by another `SystemAdmin`; and a `ProjectAdmin` must be an assigned
+ * resource on that entry's project for anyone else's (`SystemAdmin` is exempt
+ * from the last two). See that function's doc comment for the full rationale.
+ * The self-ownership case is checked here first for a clearer, dedicated
+ * error message.
  */
 export async function PUT(_request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -119,18 +117,23 @@ export async function PUT(_request: Request, { params }: RouteParams) {
     const lookup = await fetchEntryForApproval(id, accessToken);
     if (!lookup.ok) return lookup.response;
 
-    // "Own project (assigned user)" gate: a ProjectAdmin approving *someone
-    // else's* entry must be an assigned resource on that entry's project (see
-    // `lib/server/timesheetEntryAuthorization.ts` for the full rationale).
-    // Self-approval is always allowed regardless — see this route's doc
-    // comment and `TimesheetHistoryView.tsx`'s "Self-approval is
-    // intentionally permitted" note.
-    if (
-      lookup.entry.userId !== currentUser.id &&
-      !(await canManagerActOnProjectEntry(currentUser, lookup.entry.projectId, accessToken))
-    ) {
+    // Rule 1 (see `canApproverActOnEntry`'s doc comment): a manager may never
+    // approve their own entry. Checked first, separately, for a clearer error
+    // message than the generic project-scope 403 below.
+    if (lookup.entry.userId === currentUser.id) {
       return NextResponse.json(
-        { message: "You do not have permission to approve timesheet entries for this project." },
+        { message: "You cannot approve your own timesheet entry." },
+        { status: 403 }
+      );
+    }
+
+    // Remaining rules — a SystemAdmin's entry may only be approved by another
+    // SystemAdmin, and a ProjectAdmin must be an assigned resource on that
+    // entry's project for anyone else's — see
+    // `lib/server/timesheetEntryAuthorization.ts` for the full rationale.
+    if (!(await canApproverActOnEntry(currentUser, lookup.entry, accessToken))) {
+      return NextResponse.json(
+        { message: "You do not have permission to approve this timesheet entry." },
         { status: 403 }
       );
     }

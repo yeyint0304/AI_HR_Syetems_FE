@@ -24,7 +24,10 @@ const initialValues = {
   firstName: "Jane",
   lastName: "Doe",
   email: "jane@example.com",
-  countryId: null,
+  // Country is now a required field (`feature/user-deactivate`), so the
+  // fixture carries an already-selected country, matching a real profile
+  // that was saved after this requirement shipped.
+  countryId: "22222222-2222-2222-2222-222222222201",
 };
 
 const COUNTRIES = [
@@ -111,6 +114,23 @@ describe("UpdateProfileForm", () => {
     expect(submitButton).toBeEnabled();
   });
 
+  // Per the `feature/user-deactivate` request ("also required on ... Profile
+  // Update"): a legacy profile with no country saved yet (`countryId: null`,
+  // the pre-this-feature shape) must pick one before saving — this is the
+  // realistic path to a missing country, since `CountrySelectField` has no
+  // "clear selection" affordance once a country is chosen.
+  it("requires a country to be selected when the profile has none saved yet", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<UpdateProfileForm initialValues={{ ...initialValues, countryId: null }} />);
+
+    await user.clear(screen.getByLabelText(/first name/i));
+    await user.type(screen.getByLabelText(/first name/i), "Janet");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/country is required/i)).toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
   it("shows a validation error for an invalid email", async () => {
     const user = userEvent.setup();
     renderWithClient(<UpdateProfileForm initialValues={initialValues} />);
@@ -141,7 +161,7 @@ describe("UpdateProfileForm", () => {
       firstName: "Janet",
       lastName: "Doe",
       email: "jane@example.com",
-      countryId: null,
+      countryId: "22222222-2222-2222-2222-222222222201",
     });
     // No server refresh — the returned user is written straight into the
     // auth store instead (`hooks/useAuth.ts#useUpdateProfile`).

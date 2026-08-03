@@ -1,8 +1,11 @@
 import { apiClient } from "@/lib/api/axiosInstance";
 import type {
   CreateTimesheetEntryRequest,
+  ProjectAdminTimesheetSummary,
+  ProjectAdminTimesheetSummaryFilters,
   TimesheetEntry,
   TimesheetEntryListFilters,
+  TimesheetEntryUserRole,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
 
@@ -83,4 +86,37 @@ export async function approveTimesheetEntryRequest(id: string): Promise<void> {
  */
 export async function rejectTimesheetEntryRequest(id: string): Promise<void> {
   await apiClient.delete(`/timesheet-entries/${id}`);
+}
+
+/**
+ * `ProjectAdmin`-facing summary/entry-list, backed by the dedicated
+ * `TimesheetEntry/GetProjectAdminTimesheetSummary` endpoint (via this app's
+ * own `/api/timesheet-entries/project-admin-summary` Route Handler) rather
+ * than `getTimesheetEntryListRequest`'s `GetAllTimesheetEntries` — see
+ * `components/timesheets/TimesheetHistoryView.tsx` for how the two are
+ * split by role.
+ */
+export async function getProjectAdminTimesheetSummaryRequest(
+  filters?: ProjectAdminTimesheetSummaryFilters
+): Promise<ProjectAdminTimesheetSummary> {
+  const { data } = await apiClient.get<{ data: ProjectAdminTimesheetSummary }>(
+    "/timesheet-entries/project-admin-summary",
+    { params: filters }
+  );
+  return data.data;
+}
+
+/**
+ * Every user's system role (`SystemAdmin`/`ProjectAdmin`/`Employee`), backing
+ * `TimesheetHistoryView`'s Approve/Reject button gating for the
+ * `feature/user-deactivate` rule "a System Admin's timesheet can only be
+ * approved by other System Admins" (see
+ * `app/api/timesheet-entries/user-roles/route.ts` and
+ * `types/timesheetEntry.types.ts#TimesheetEntryUserRole`).
+ */
+export async function getTimesheetEntryUserRolesRequest(): Promise<TimesheetEntryUserRole[]> {
+  const { data } = await apiClient.get<{ data: TimesheetEntryUserRole[] }>(
+    "/timesheet-entries/user-roles"
+  );
+  return data.data;
 }

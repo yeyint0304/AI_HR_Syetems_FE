@@ -153,6 +153,31 @@ describe("EditUserForm", () => {
     );
   });
 
+  it("disables the Status field and always submits isActive: true when editing the signed-in user's own row", async () => {
+    mockReferenceData();
+    (apiClient.put as jest.Mock).mockResolvedValueOnce({ data: { data: USER } });
+    const user = userEvent.setup();
+    renderWithClient(<EditUserForm user={USER} isSelf onSuccess={jest.fn()} onCancel={jest.fn()} />);
+
+    const statusField = screen.getByLabelText(/^status$/i);
+    expect(statusField).toBeDisabled();
+    expect(screen.getByText(/you cannot change your own account's status/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(apiClient.put).toHaveBeenCalledWith(
+      "/auth/users/u1",
+      expect.objectContaining({ isActive: true })
+    );
+  });
+
+  it("leaves the Status field enabled when editing a different user", async () => {
+    mockReferenceData();
+    renderWithClient(<EditUserForm user={USER} isSelf={false} onSuccess={jest.fn()} onCancel={jest.fn()} />);
+
+    expect(screen.getByLabelText(/^status$/i)).not.toBeDisabled();
+  });
+
   it("calls onCancel when Cancel is clicked", async () => {
     mockReferenceData();
     const onCancel = jest.fn();
@@ -187,6 +212,22 @@ describe("EditUserForm", () => {
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     expect(await screen.findByText(/username must be at least 3 characters/i)).toBeInTheDocument();
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  // Per the `feature/user-deactivate` request ("also required on Edit
+  // User"): a legacy user record with no country saved yet (`countryId:
+  // null`, the pre-this-feature shape) must have one selected before saving.
+  it("requires a country to be selected when the user has none saved yet", async () => {
+    mockReferenceData();
+    const user = userEvent.setup();
+    renderWithClient(
+      <EditUserForm user={{ ...USER, countryId: null }} onSuccess={jest.fn()} onCancel={jest.fn()} />
+    );
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/country is required/i)).toBeInTheDocument();
     expect(apiClient.put).not.toHaveBeenCalled();
   });
 });

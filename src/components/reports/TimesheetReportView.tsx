@@ -7,10 +7,15 @@ import { SelectField } from "@/components/ui/SelectField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { TextField } from "@/components/ui/TextField";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useTimesheetReport } from "@/hooks/useReports";
 import { buildTimesheetReportExportUrl } from "@/lib/api/report.api";
-import { canManageReports, DEFAULT_TIMESHEET_REPORT_PAGE_SIZE, EXPORT_FORMAT_OPTIONS } from "@/lib/constants/report.constants";
+import {
+  canManageReports,
+  DEFAULT_TIMESHEET_REPORT_PAGE_SIZE,
+  EXPORT_FORMAT_OPTIONS,
+  isProjectScopedReportManager,
+} from "@/lib/constants/report.constants";
 import { timesheetReportFilterSchema } from "@/lib/validators/report.validators";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate, getCurrentMonthToDateRange } from "@/lib/utils/date";
@@ -56,9 +61,14 @@ function toAppliedFilters(draft: DraftFilters, page: number): TimesheetReportFil
  *
  * A plain `User` is self-scoped to their own rows server-side (see
  * `app/api/reports/timesheet/route.ts`), so the "User ID" filter is only
- * rendered for SystemAdmin/ProjectAdmin. There is no "list all users"
- * reference-data endpoint in this codebase yet (user management is a
- * separate, not-yet-implemented Administration module — see
+ * rendered for `SystemAdmin` — the only role whose branch there
+ * (`Report/GenerateTimesheetReport`) actually honors an arbitrary `userId`.
+ * A `ProjectAdmin` is powered by the self/team-scoped
+ * `Report/GenerateMyTimesheetReport` instead (see that Route Handler's
+ * docblock), which documents no `userId` param, so the filter would be
+ * misleading if shown to them. There is no "list all users" reference-data
+ * endpoint in this codebase yet (user management is a separate,
+ * not-yet-implemented Administration module — see
  * `lib/constants/navigation.constants.ts`), so this intentionally accepts a
  * raw User ID (GUID) rather than a fabricated dropdown.
  *
@@ -72,7 +82,11 @@ function toAppliedFilters(draft: DraftFilters, page: number): TimesheetReportFil
  */
 export function TimesheetReportView() {
   const { user } = useAuth();
-  const canFilterByUser = canManageReports(user?.role);
+  // Only SystemAdmin's branch (`Report/GenerateTimesheetReport`) honors an
+  // arbitrary `userId` filter — a ProjectAdmin is powered by the self/team
+  // -scoped `Report/GenerateMyTimesheetReport` instead (see this component's
+  // doc comment), so the filter is hidden for them.
+  const canFilterByUser = canManageReports(user?.role) && !isProjectScopedReportManager(user?.role);
 
   const defaultRange = useMemo(() => getCurrentMonthToDateRange(), []);
   const [draftFilters, setDraftFilters] = useState<DraftFilters>({
@@ -85,7 +99,12 @@ export function TimesheetReportView() {
   const [appliedFilters, setAppliedFilters] = useState<TimesheetReportFilters | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
 
-  const { data: projects, isLoading: isProjectsLoading } = useProjectList();
+  // Scoped to "my projects" for ProjectAdmin/Employee, full catalog for
+  // SystemAdmin — see `hooks/useProjects.ts#useProjectSelectOptions` — so the
+  // Project filter never offers a project outside what
+  // `Report/GenerateMyTimesheetReport`/`Report/GenerateTimesheetReport`
+  // actually covers for the signed-in role.
+  const { data: projects, isLoading: isProjectsLoading } = useProjectSelectOptions();
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -190,6 +209,12 @@ export function TimesheetReportView() {
             onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectId: event.target.value }))}
             options={sortedProjects.map((project) => ({ value: project.id, label: project.name }))}
             placeholder={isProjectsLoading ? "Loading projects…" : "All Projects"}
+            // "All Projects" is a real, re-selectable filter value, not just an
+            // initial hint — without this, `SelectField`'s default `disabled`
+            // placeholder becomes permanently unreachable once a specific
+            // project is chosen (see `components/ui/SelectField.tsx`'s
+            // `placeholderDisabled` doc comment).
+            placeholderDisabled={false}
             disabled={isProjectsLoading}
           />
         </div>
@@ -202,6 +227,7 @@ export function TimesheetReportView() {
             }
             options={STATUS_OPTIONS}
             placeholder="All Statuses"
+            placeholderDisabled={false}
           />
         </div>
         {canFilterByUser && (

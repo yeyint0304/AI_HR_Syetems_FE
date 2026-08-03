@@ -6,14 +6,15 @@ import {
   timesheetReportQuerySchema,
 } from "@/lib/validators/report.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageReports } from "@/lib/constants/report.constants";
+import { canManageReports, isProjectScopedReportManager } from "@/lib/constants/report.constants";
 
 /**
  * GET /api/reports/timesheet/export
- * [Auth] Exports the timesheet report as a file via `Report/ExportTimesheetReport`
- * (`format=xlsx|csv`, default `xlsx`). Applies the exact same required
- * filters and self-scoping rules as `GET /api/reports/timesheet` — see that
- * Route Handler's docblock for the OWASP A01 rationale.
+ * [Auth] Exports the timesheet report as a file (`format=xlsx|csv`, default
+ * `xlsx`). Applies the exact same required filters and self-scoping rules as
+ * `GET /api/reports/timesheet` — see that Route Handler's docblock for the
+ * OWASP A01 rationale and the `ProjectAdmin`/`SystemAdmin` backend-endpoint
+ * split (`Report/ExportMyTimesheetReport` vs `Report/ExportTimesheetReport`).
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -66,10 +67,17 @@ export async function GET(request: Request) {
 
   const effectiveUserId = requestedUserId ?? (canManageAny ? undefined : currentUser.id);
   const format = parsedFormat.data;
+  const isProjectAdmin = isProjectScopedReportManager(currentUser.role);
 
   return fetchReportExport({
-    backendPath: "/Report/ExportTimesheetReport",
-    params: { ...parsedQuery.data, userId: effectiveUserId, format },
+    backendPath: isProjectAdmin ? "/Report/ExportMyTimesheetReport" : "/Report/ExportTimesheetReport",
+    params: {
+      ...parsedQuery.data,
+      // See `app/api/reports/timesheet/route.ts` — `ExportMyTimesheetReport`
+      // is self/team-scoped and documents no `userId` param.
+      userId: isProjectAdmin ? undefined : effectiveUserId,
+      format,
+    },
     accessToken,
     format,
     filename: `timesheet-report_${parsedQuery.data.startDate}_to_${parsedQuery.data.endDate}.${format}`,

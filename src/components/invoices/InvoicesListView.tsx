@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { TextField } from "@/components/ui/TextField";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useInvoiceList } from "@/hooks/useInvoices";
 import { buildInvoicePdfUrl } from "@/lib/api/invoice.api";
 import {
@@ -42,17 +42,20 @@ function formatMoney(value: number, symbol: string | undefined): string {
  * (`app/(dashboard)/invoices/page.tsx`) — see
  * `lib/constants/invoice.constants.ts` for the rationale. Fetches live data
  * via `useInvoiceList` (TanStack Query -> `lib/api/invoice.api.ts` ->
- * `/api/invoices` Route Handler -> the .NET backend's `Invoice/GetAllInvoices`).
+ * `/api/invoices` Route Handler -> the .NET backend). That Route Handler
+ * itself splits by role (`isProjectScopedInvoiceManager`): `Invoice/GetMyInvoices`
+ * for a `ProjectAdmin`, `Invoice/GetAllInvoices` for `SystemAdmin` — this
+ * component and `useInvoiceList` are unaware of which one served the request.
  *
  * The status "chips" are computed from a second, unfiltered-by-status
- * `useInvoiceList` call (capped at 100 rows, since `Invoice/GetAllInvoices`
- * has no dedicated "counts by status" endpoint) so the counts stay accurate
+ * `useInvoiceList` call (capped at 100 rows, since neither backend endpoint
+ * has a dedicated "counts by status" endpoint) so the counts stay accurate
  * even while the table itself is filtered to a single status.
  *
  * Unlike the reference-data tables (`CountriesListView`, `CurrenciesListView`,
  * etc.), this table's rows are paginated server-side — `page`/`pageSize` are
- * sent straight through to `Invoice/GetAllInvoices` via `tableFilters` below
- * — rather than via `hooks/useTablePagination.ts`'s client-side slicing. Per
+ * sent straight through to the backend via `tableFilters` below — rather
+ * than via `hooks/useTablePagination.ts`'s client-side slicing. Per
  * the `bugs/paginations` feature request, the Previous/Next/page-number
  * controls themselves still render through the shared
  * `components/ui/TablePagination.tsx` (`react-paginate`-backed), the same
@@ -64,7 +67,11 @@ export function InvoicesListView() {
   const [page, setPage] = useState(1);
   const [filterError, setFilterError] = useState<string | null>(null);
 
-  const { data: projects, isLoading: isProjectsLoading } = useProjectList();
+  // Scoped to "my projects" for ProjectAdmin, full catalog for SystemAdmin —
+  // see `hooks/useProjects.ts#useProjectSelectOptions` — matching
+  // `Invoice/GetMyInvoices`'s own project scope for a ProjectAdmin (see
+  // `lib/constants/invoice.constants.ts`).
+  const { data: projects, isLoading: isProjectsLoading } = useProjectSelectOptions();
   const sortedProjects = useMemo(
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -170,6 +177,10 @@ export function InvoicesListView() {
             onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectId: event.target.value }))}
             options={sortedProjects.map((project) => ({ value: project.id, label: project.name }))}
             placeholder={isProjectsLoading ? "Loading projects…" : "All Projects"}
+            // "All Projects" must stay re-selectable after picking a specific
+            // project — see `components/ui/SelectField.tsx`'s
+            // `placeholderDisabled` doc comment.
+            placeholderDisabled={false}
             disabled={isProjectsLoading}
           />
         </div>
@@ -182,6 +193,7 @@ export function InvoicesListView() {
             }
             options={INVOICE_STATUS_OPTIONS}
             placeholder="All Statuses"
+            placeholderDisabled={false}
           />
         </div>
         <div className="w-full sm:w-40">

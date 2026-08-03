@@ -28,6 +28,25 @@ export function canManageReports(role: string | null | undefined): boolean {
   return (REPORT_MANAGER_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * Returns true if the given role's Timesheet/User Roles Summary/Cost &
+ * Revenue reports must be backed by the backend's self-scoped
+ * `Report/GenerateMy*`/`Report/ExportMy*` endpoints rather than the org-wide
+ * `Report/Generate*`/`Report/Export*` ones (see the Route Handlers under
+ * `app/api/reports/`).
+ *
+ * Per this app's API-integration requirement, a `ProjectAdmin` reviewing any
+ * of the three reports is powered by the `My*` variant (scoped to the
+ * projects/team they manage), while `SystemAdmin` — the org-wide
+ * administrator role — keeps the unrestricted `Generate*`/`Export*`
+ * endpoints, mirroring `isProjectScopedTimesheetManager`
+ * (`lib/constants/timesheetEntry.constants.ts`) and
+ * `isProjectScopedInvoiceManager` (`lib/constants/invoice.constants.ts`).
+ */
+export function isProjectScopedReportManager(role: string | null | undefined): boolean {
+  return role === USER_ROLES.PROJECT_ADMIN;
+}
+
 export interface ReportHubItem {
   key: "timesheet" | "roles-summary" | "cost-revenue";
   title: string;

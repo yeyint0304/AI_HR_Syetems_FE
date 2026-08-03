@@ -57,19 +57,14 @@ export function UpdateProfileForm({ initialValues, onSuccess, onCancel }: Update
 
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
-    updateProfileMutation.mutate(
-      { ...values, countryId: values.countryId || null },
-      {
-        onSuccess: (updatedUser) => {
-          onSuccess?.(updatedUser);
-        },
-        onError: (error) => {
-          setFormError(
-            getApiErrorMessage(error, "Unable to update your profile. Please try again.")
-          );
-        },
-      }
-    );
+    updateProfileMutation.mutate(values, {
+      onSuccess: (updatedUser) => {
+        onSuccess?.(updatedUser);
+      },
+      onError: (error) => {
+        setFormError(getApiErrorMessage(error, "Unable to update your profile. Please try again."));
+      },
+    });
   });
 
   return (
@@ -113,7 +108,6 @@ export function UpdateProfileForm({ initialValues, onSuccess, onCancel }: Update
             onChange={field.onChange}
             isLoading={isCountriesLoading}
             disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
-            hint="Optional. Leave blank if not applicable."
             error={errors.countryId?.message}
           />
         )}

@@ -43,6 +43,14 @@ const systemAdminUser: AuthUser = {
   role: "SystemAdmin",
 };
 
+const employeeUser: AuthUser = {
+  id: "3",
+  email: "employee@hrsystem.com",
+  firstName: "Alex",
+  lastName: "Kumar",
+  role: "Employee",
+};
+
 describe("Sidebar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -193,5 +201,38 @@ describe("Sidebar", () => {
     await user.click(screen.getByRole("link", { name: /dashboard/i }));
 
     expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Employee role visibility", () => {
+    it("hides the entire Reports section for an Employee", () => {
+      renderSidebar(employeeUser);
+
+      expect(screen.queryByText("Reports")).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /^reports$/i })).not.toBeInTheDocument();
+    });
+
+    it("hides the entire Billing (Invoices) section for an Employee", () => {
+      renderSidebar(employeeUser);
+
+      expect(screen.queryByText("Billing")).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /^invoices$/i })).not.toBeInTheDocument();
+    });
+
+    it("hides only the Timesheet Periods item for an Employee, keeping the rest of the Timesheet section", () => {
+      renderSidebar(employeeUser);
+
+      expect(screen.queryByRole("link", { name: /^timesheet periods$/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^projects$/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^my timesheets$/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^timesheet history$/i })).toBeInTheDocument();
+    });
+
+    it("still shows Reports, Billing, and Timesheet Periods for a ProjectAdmin", () => {
+      renderSidebar(projectAdminUser);
+
+      expect(screen.getByRole("link", { name: /^reports$/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^invoices$/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^timesheet periods$/i })).toBeInTheDocument();
+    });
   });
 });

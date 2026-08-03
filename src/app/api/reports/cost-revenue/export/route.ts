@@ -6,13 +6,15 @@ import {
   reportExportFormatSchema,
 } from "@/lib/validators/report.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageReports } from "@/lib/constants/report.constants";
+import { canManageReports, isProjectScopedReportManager } from "@/lib/constants/report.constants";
 
 /**
  * GET /api/reports/cost-revenue/export
- * [Auth] Exports the "Monthly Cost & Revenue" report as a file via
- * `Report/ExportMonthlyCostRevenue` (`format=xlsx|csv`, default `xlsx`).
- * Same `REPORT_MANAGER_ROLES` restriction as `GET /api/reports/cost-revenue`.
+ * [Auth] Exports the "Monthly Cost & Revenue" report as a file
+ * (`format=xlsx|csv`, default `xlsx`). Same `REPORT_MANAGER_ROLES`
+ * restriction, and the same `ProjectAdmin`/`SystemAdmin` backend-endpoint
+ * split (`Report/ExportMyCostRevenue` vs `Report/ExportMonthlyCostRevenue`),
+ * as `GET /api/reports/cost-revenue`.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -60,9 +62,12 @@ export async function GET(request: Request) {
   }
 
   const format = parsedFormat.data;
+  const backendPath = isProjectScopedReportManager(currentUser.role)
+    ? "/Report/ExportMyCostRevenue"
+    : "/Report/ExportMonthlyCostRevenue";
 
   return fetchReportExport({
-    backendPath: "/Report/ExportMonthlyCostRevenue",
+    backendPath,
     params: { ...parsedQuery.data, format },
     accessToken,
     format,

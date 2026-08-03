@@ -19,7 +19,8 @@ const VALID_BODY = {
   firstName: "Janet",
   lastName: "Doe",
   email: "jane@example.com",
-  countryId: null,
+  // Country is now a required field (`feature/user-deactivate`).
+  countryId: "aa532dd2-1a51-4be0-b09b-be3d99ea15f3",
 };
 
 function jsonRequest(body: unknown): Request {
@@ -60,6 +61,22 @@ describe("PUT /api/auth/profile", () => {
     });
 
     const response = await PUT(jsonRequest({ ...VALID_BODY, email: "not-an-email" }));
+    expect(response.status).toBe(400);
+    expect(backendApiClient.put).not.toHaveBeenCalled();
+  });
+
+  // Per the `feature/user-deactivate` request ("also required on ...
+  // Profile Update") — re-validated server-side, not just client-side.
+  it("400s when countryId is missing", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce("access-token");
+    (getCurrentAuthUser as jest.Mock).mockResolvedValueOnce({
+      id: "1",
+      email: "jane@example.com",
+      username: "jane",
+      role: "Employee",
+    });
+
+    const response = await PUT(jsonRequest({ ...VALID_BODY, countryId: null }));
     expect(response.status).toBe(400);
     expect(backendApiClient.put).not.toHaveBeenCalled();
   });

@@ -27,6 +27,7 @@ function buildToken(claims: Record<string, unknown>): string {
 
 const userToken = buildToken({ sub: "u1", email: "user@hrsystem.com", role: "User" });
 const systemAdminToken = buildToken({ sub: "sa1", email: "sa@hrsystem.com", role: "SystemAdmin" });
+const projectAdminToken = buildToken({ sub: "pa1", email: "pa@d3-sg.com", role: "ProjectAdmin" });
 
 function getRequest(query = ""): Request {
   return new Request(`http://localhost/api/reports/cost-revenue${query}`);
@@ -80,7 +81,7 @@ describe("GET /api/reports/cost-revenue", () => {
     expect(backendApiClient.get).not.toHaveBeenCalled();
   });
 
-  it("allows a SystemAdmin and returns the mapped report", async () => {
+  it("allows a SystemAdmin, calling Report/GenerateMonthlyCostRevenue, and returns the mapped report", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({ data: successEnvelope });
 
@@ -89,6 +90,17 @@ describe("GET /api/reports/cost-revenue", () => {
 
     expect(response.status).toBe(200);
     expect(body.data).toEqual(expect.objectContaining({ year: 2026, month: 7 }));
+    expect(backendApiClient.get).toHaveBeenCalledWith("/Report/GenerateMonthlyCostRevenue", expect.anything());
+  });
+
+  it("allows a ProjectAdmin, calling Report/GenerateMyCostRevenue", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({ data: successEnvelope });
+
+    const response = await GET(getRequest("?year=2026&month=7"));
+
+    expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith("/Report/GenerateMyCostRevenue", expect.anything());
   });
 
   it("hides the backend's raw message for a 5xx logical failure at HTTP 200", async () => {

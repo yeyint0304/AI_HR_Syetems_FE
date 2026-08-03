@@ -25,10 +25,9 @@ export const updateProfileSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required.").max(100, "First name is too long."),
   lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
   email: z.email("Enter a valid email address."),
-  countryId: z
-    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
-    .optional()
-    .nullable(),
+  // Required per the `feature/user-deactivate` request ("make country a
+  // required field ... also required on Edit User and Profile Update").
+  countryId: guidSchema("Country is required."),
 });
 export type UpdateProfileFormValues = z.infer<typeof updateProfileSchema>;
 
@@ -72,10 +71,9 @@ export const createUserSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required.").max(100, "First name is too long."),
   lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
   employeeId: z.string().trim().max(50, "Employee ID is too long.").optional().or(z.literal("")),
-  countryId: z
-    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
-    .optional()
-    .nullable(),
+  // Required per the `feature/user-deactivate` request ("On the Add User
+  // page, make country a required field").
+  countryId: guidSchema("Country is required."),
   roleId: guidSchema("Select a role."),
 });
 export type CreateUserFormValues = z.infer<typeof createUserSchema>;
@@ -93,10 +91,9 @@ export const updateUserSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required.").max(100, "First name is too long."),
   lastName: z.string().trim().min(1, "Last name is required.").max(100, "Last name is too long."),
   employeeId: z.string().trim().max(50, "Employee ID is too long.").optional().or(z.literal("")),
-  countryId: z
-    .union([guidSchema("Enter a valid Country ID (GUID)."), z.literal("")])
-    .optional()
-    .nullable(),
+  // Required per the `feature/user-deactivate` request ("also required on
+  // Edit User").
+  countryId: guidSchema("Country is required."),
   isActive: z.boolean(),
   roleId: z
     .union([guidSchema("Select a valid role."), z.literal("")])
@@ -108,8 +105,9 @@ export type UpdateUserFormValues = z.infer<typeof updateUserSchema>;
 /**
  * Server-side query schema for `GET /api/auth/unassigned-users`, backing the
  * scroll-paginated, searchable "User" combobox on the Project Assignments
- * screen. `Auth/GetUserList` itself documents no query parameters in
- * `docs/HR_System_BE.postman_collection.json`, so these are applied
+ * screen. `Auth/SearchUsers` itself documents no `page`/`pageSize` query
+ * parameters in `docs/HR_System_BE.postman_collection.json` (only `email`/
+ * `userName`/`isAllRole`), so `page`/`pageSize` are applied
  * optimistically/defensively rather than as a confirmed backend contract —
  * see the route handler for the full rationale.
  */

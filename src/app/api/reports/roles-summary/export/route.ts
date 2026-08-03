@@ -6,13 +6,15 @@ import {
   userRolesSummaryQuerySchema,
 } from "@/lib/validators/report.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageReports } from "@/lib/constants/report.constants";
+import { canManageReports, isProjectScopedReportManager } from "@/lib/constants/report.constants";
 
 /**
  * GET /api/reports/roles-summary/export
- * [Auth] Exports the "User Roles Summary" report as a file via
- * `Report/ExportUserRolesSummary` (`format=xlsx|csv`, default `xlsx`).
- * Same `REPORT_MANAGER_ROLES` restriction as `GET /api/reports/roles-summary`.
+ * [Auth] Exports the "User Roles Summary" report as a file
+ * (`format=xlsx|csv`, default `xlsx`). Same `REPORT_MANAGER_ROLES`
+ * restriction, and the same `ProjectAdmin`/`SystemAdmin` backend-endpoint
+ * split (`Report/ExportMyUserRolesSummary` vs `Report/ExportUserRolesSummary`),
+ * as `GET /api/reports/roles-summary`.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -59,9 +61,12 @@ export async function GET(request: Request) {
   }
 
   const format = parsedFormat.data;
+  const backendPath = isProjectScopedReportManager(currentUser.role)
+    ? "/Report/ExportMyUserRolesSummary"
+    : "/Report/ExportUserRolesSummary";
 
   return fetchReportExport({
-    backendPath: "/Report/ExportUserRolesSummary",
+    backendPath,
     params: { ...parsedQuery.data, format },
     accessToken,
     format,

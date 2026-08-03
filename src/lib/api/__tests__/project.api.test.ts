@@ -3,6 +3,7 @@ import {
   assignResourceRequest,
   createProjectRequest,
   deleteProjectRequest,
+  getMyProjectListRequest,
   getProjectAssignmentsRequest,
   getProjectListRequest,
   getProjectRequest,
@@ -37,6 +38,15 @@ describe("project.api", () => {
     const result = await getProjectListRequest();
 
     expect(apiClient.get).toHaveBeenCalledWith("/projects");
+    expect(result).toEqual([PROJECT]);
+  });
+
+  it("getMyProjectListRequest fetches and unwraps the caller's scoped project list", async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: [PROJECT] } });
+
+    const result = await getMyProjectListRequest();
+
+    expect(apiClient.get).toHaveBeenCalledWith("/projects/my");
     expect(result).toEqual([PROJECT]);
   });
 

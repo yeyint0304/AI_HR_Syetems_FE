@@ -54,7 +54,6 @@ export function CreateUserForm() {
       {
         ...values,
         employeeId: values.employeeId || undefined,
-        countryId: values.countryId || null,
       },
       {
         onSuccess: () => {
@@ -157,7 +156,6 @@ export function CreateUserForm() {
               onChange={field.onChange}
               isLoading={isCountriesLoading}
               disabled={isCountriesLoading || (countries?.length ?? 0) === 0}
-              hint="Optional."
               error={errors.countryId?.message}
             />
           )}

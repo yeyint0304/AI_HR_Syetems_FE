@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import {
+  mapBackendProjectAdminTimesheetSummary,
   mapBackendTimesheetEntry,
   mapBackendTimesheetEntryList,
 } from "@/lib/server/timesheetEntryResponseMappers";
@@ -100,6 +101,82 @@ describe("timesheetEntryResponseMappers", () => {
 
     it("returns an empty array when Data is null (e.g. after unwrapping an update/delete envelope)", () => {
       expect(mapBackendTimesheetEntryList(null)).toEqual([]);
+    });
+  });
+
+  describe("mapBackendProjectAdminTimesheetSummary", () => {
+    it("maps the saved 'Get Project Admin Timesheet Entry' example", () => {
+      const result = mapBackendProjectAdminTimesheetSummary({
+        TotalHours: 40,
+        ApprovedHours: 20,
+        PendingHours: 20,
+        ProjectSummaries: [
+          {
+            ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+            ProjectCode: "D3SG001",
+            ProjectName: "Straight Through Processing Enhancement Phase 1",
+            TotalHours: 40,
+            ApprovedHours: 20,
+            PendingHours: 20,
+          },
+        ],
+        Entries: [
+          {
+            Id: "5a24c616-eba8-4c6f-b4dd-1928a896d792",
+            UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
+            ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+            TimesheetPeriodId: "be79b007-2525-404d-9946-b49efca89872",
+            EntryDate: "2026-03-07",
+            Hours: 20,
+            TaskDescription: "Worked on feature implementation",
+            IsApproved: true,
+          },
+        ],
+      });
+
+      expect(result).toEqual({
+        totalHours: 40,
+        approvedHours: 20,
+        pendingHours: 20,
+        projectSummaries: [
+          expect.objectContaining({
+            projectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+            projectCode: "D3SG001",
+            projectName: "Straight Through Processing Enhancement Phase 1",
+            totalHours: 40,
+            approvedHours: 20,
+            pendingHours: 20,
+          }),
+        ],
+        entries: [expect.objectContaining({ id: "5a24c616-eba8-4c6f-b4dd-1928a896d792", hours: 20 })],
+      });
+    });
+
+    it("defaults ProjectSummaries/Entries to empty arrays when absent", () => {
+      expect(mapBackendProjectAdminTimesheetSummary({ TotalHours: 0, ApprovedHours: 0, PendingHours: 0 })).toEqual({
+        totalHours: 0,
+        approvedHours: 0,
+        pendingHours: 0,
+        projectSummaries: [],
+        entries: [],
+      });
+    });
+
+    it("filters out malformed project summaries/entries missing required ids", () => {
+      const result = mapBackendProjectAdminTimesheetSummary({
+        TotalHours: 0,
+        ApprovedHours: 0,
+        PendingHours: 0,
+        ProjectSummaries: [{ TotalHours: 5 }],
+        Entries: [{ Id: "1" }],
+      });
+      expect(result?.projectSummaries).toEqual([]);
+      expect(result?.entries).toEqual([]);
+    });
+
+    it("returns null for a non-object", () => {
+      expect(mapBackendProjectAdminTimesheetSummary(null)).toBeNull();
+      expect(mapBackendProjectAdminTimesheetSummary("not-an-object")).toBeNull();
     });
   });
 });

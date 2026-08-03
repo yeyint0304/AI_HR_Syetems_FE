@@ -63,22 +63,30 @@ describe("GET /api/reports/roles-summary", () => {
     expect(backendApiClient.get).not.toHaveBeenCalled();
   });
 
-  it("allows a ProjectAdmin", async () => {
+  it("allows a ProjectAdmin, calling Report/GenerateMyUserRolesSummary", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({ data: successEnvelope });
 
     const response = await GET(getRequest("?startDate=2026-07-01&endDate=2026-07-20"));
 
     expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Report/GenerateMyUserRolesSummary",
+      expect.anything()
+    );
   });
 
-  it("allows a SystemAdmin", async () => {
+  it("allows a SystemAdmin, calling Report/GenerateUserRolesSummary", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({ data: successEnvelope });
 
     const response = await GET(getRequest("?startDate=2026-07-01&endDate=2026-07-20"));
 
     expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Report/GenerateUserRolesSummary",
+      expect.anything()
+    );
   });
 
   it("400s on a missing required date filter, even for an authorized role", async () => {

@@ -1,5 +1,6 @@
 import {
   createTimesheetEntrySchema,
+  projectAdminTimesheetSummaryQuerySchema,
   timesheetEntryListQuerySchema,
   updateTimesheetEntrySchema,
 } from "@/lib/validators/timesheetEntry.validators";
@@ -116,6 +117,24 @@ describe("timesheetEntry.validators", () => {
 
     it("rejects an invalid isApproved value", () => {
       expect(timesheetEntryListQuerySchema.safeParse({ isApproved: "yes" }).success).toBe(false);
+    });
+  });
+
+  describe("projectAdminTimesheetSummaryQuerySchema", () => {
+    it("accepts an empty filter (projectId omitted)", () => {
+      expect(projectAdminTimesheetSummaryQuerySchema.safeParse({}).success).toBe(true);
+    });
+
+    it("accepts a valid projectId", () => {
+      expect(
+        projectAdminTimesheetSummaryQuerySchema.safeParse({
+          projectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+        }).success
+      ).toBe(true);
+    });
+
+    it("rejects a non-uuid projectId", () => {
+      expect(projectAdminTimesheetSummaryQuerySchema.safeParse({ projectId: "nope" }).success).toBe(false);
     });
   });
 });

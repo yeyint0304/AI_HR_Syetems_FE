@@ -1,27 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  BarChart3,
-  Clock,
-  FileText,
-  FolderKanban,
-  Receipt,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { BarChart3, Clock, FileText, FolderKanban, Receipt, Users, type LucideIcon } from "lucide-react";
 import { getAccessToken } from "@/lib/server/authCookies";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { USER_ROLES } from "@/lib/constants/auth.constants";
+import { TotalProjectsStat } from "@/components/home/TotalProjectsStat";
 
 export const metadata: Metadata = { title: "Dashboard | HR System" };
 
 /**
  * Summary/activity data below is placeholder mock data, matching the
  * dashboard wireframe (`docs/HR_System_FE_wireframe.pdf`, which itself notes
- * "Data is hardcoded JSON"). Project/Timesheet/Invoice domains don't have
- * `lib/api` modules yet — wiring these cards up to the real backend is a
- * separate feature, out of scope for this design-only change.
+ * "Data is hardcoded JSON"). Timesheet/Invoice domains don't have `lib/api`
+ * modules wired into this page yet — wiring those cards up to the real
+ * backend remains out of scope for this change.
+ *
+ * "Total Projects" is the one exception: per the `feature/user-deactivate`
+ * request ("On the Dashboard and Project pages, fix the API so only the
+ * user's own project appears"), that card is now backed by live,
+ * role-scoped data (`components/home/TotalProjectsStat.tsx`) rather than the
+ * hardcoded value below — see that component's doc comment.
  */
 interface SummaryStat {
   label: string;
@@ -34,15 +33,6 @@ interface SummaryStat {
 }
 
 const SUMMARY_STATS: SummaryStat[] = [
-  {
-    label: "Total Projects",
-    value: "2",
-    trend: "+1 this month",
-    trendTone: "positive",
-    icon: FolderKanban,
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-  },
   {
     label: "Hours This Week",
     value: "24",
@@ -198,6 +188,7 @@ export default async function DashboardHomePage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TotalProjectsStat />
         {SUMMARY_STATS.map((stat) => {
           const Icon = stat.icon;
           return (

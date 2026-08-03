@@ -5,13 +5,16 @@ import {
   approveTimesheetEntryRequest,
   createTimesheetEntryRequest,
   deleteTimesheetEntryRequest,
+  getProjectAdminTimesheetSummaryRequest,
   getTimesheetEntryListRequest,
   getTimesheetEntryRequest,
+  getTimesheetEntryUserRolesRequest,
   rejectTimesheetEntryRequest,
   updateTimesheetEntryRequest,
 } from "@/lib/api/timesheetEntry.api";
 import type {
   CreateTimesheetEntryRequest,
+  ProjectAdminTimesheetSummaryFilters,
   TimesheetEntryListFilters,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
@@ -35,6 +38,47 @@ export function useTimesheetEntryList(
     queryKey: timesheetEntryListQueryKey(filters),
     queryFn: () => getTimesheetEntryListRequest(filters),
     enabled: options?.enabled ?? true,
+  });
+}
+
+const projectAdminTimesheetSummaryQueryKey = (filters?: ProjectAdminTimesheetSummaryFilters) =>
+  [...TIMESHEET_ENTRIES_QUERY_KEY, "project-admin-summary", filters ?? {}] as const;
+
+/**
+ * `ProjectAdmin`-facing counterpart to `useTimesheetEntryList` — backed by
+ * `TimesheetEntry/GetProjectAdminTimesheetSummary` (via
+ * `getProjectAdminTimesheetSummaryRequest`) rather than
+ * `GetAllTimesheetEntries`. Used by `TimesheetHistoryView` only while the
+ * signed-in user is a `ProjectAdmin`; `SystemAdmin`/a plain `User` keep using
+ * `useTimesheetEntryList`.
+ */
+export function useProjectAdminTimesheetSummary(
+  filters?: ProjectAdminTimesheetSummaryFilters,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: projectAdminTimesheetSummaryQueryKey(filters),
+    queryFn: () => getProjectAdminTimesheetSummaryRequest(filters),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+const USER_ROLES_QUERY_KEY = [...TIMESHEET_ENTRIES_QUERY_KEY, "user-roles"] as const;
+
+/**
+ * Every user's system role, backing `TimesheetHistoryView`'s Approve/Reject
+ * button gating for the "a SystemAdmin's entry can only be approved by
+ * another SystemAdmin" rule (see `getTimesheetEntryUserRolesRequest`).
+ * `enabled` should only be `true` for a `ProjectAdmin` viewer — a
+ * `SystemAdmin`'s own Approve/Reject authority never depends on this data
+ * (see `lib/server/timesheetEntryAuthorization.ts#canApproverActOnEntry`),
+ * and a plain Employee never sees Approve/Reject at all.
+ */
+export function useTimesheetEntryUserRoles(enabled: boolean) {
+  return useQuery({
+    queryKey: USER_ROLES_QUERY_KEY,
+    queryFn: getTimesheetEntryUserRolesRequest,
+    enabled,
   });
 }
 

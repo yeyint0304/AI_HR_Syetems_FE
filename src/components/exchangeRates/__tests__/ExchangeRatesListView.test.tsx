@@ -101,16 +101,15 @@ describe("ExchangeRatesListView", () => {
     expect(screen.queryByRole("button", { name: /add rate/i })).not.toBeInTheDocument();
   });
 
-  it("renders the base currency card, other currency cards with the latest rate, and the rates table", async () => {
+  it("renders the rates table for the configured currencies", async () => {
     mockApiGet();
     renderWithClient(<ExchangeRatesListView />);
 
-    await screen.findByText("Base currency");
-    // Appears once on the currency summary card and once in the rates table row.
-    expect(screen.getAllByText(/1 SGD = 0\.74 USD/).length).toBe(2);
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(/1 SGD = 0\.74 USD/)).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /from/i })).toBeInTheDocument();
-    expect(screen.getAllByText("SGD").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("USD").length).toBeGreaterThan(0);
+    expect(within(table).getByText("SGD")).toBeInTheDocument();
+    expect(within(table).getByText("USD")).toBeInTheDocument();
   });
 
   it("shows an empty rates message when there are no exchange rates yet", async () => {
@@ -118,7 +117,6 @@ describe("ExchangeRatesListView", () => {
     renderWithClient(<ExchangeRatesListView />);
 
     expect(await screen.findByText(/no exchange rates yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/no rate set/i)).toBeInTheDocument();
   });
 
   it("creates a new exchange rate via the Add Rate modal", async () => {
@@ -127,7 +125,7 @@ describe("ExchangeRatesListView", () => {
     const user = userEvent.setup();
     renderWithClient(<ExchangeRatesListView />);
 
-    await screen.findByText("Base currency");
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: /add rate/i }));
 
     const dialog = screen.getByRole("dialog");
@@ -158,7 +156,7 @@ describe("ExchangeRatesListView", () => {
     const user = userEvent.setup();
     renderWithClient(<ExchangeRatesListView />);
 
-    await screen.findByText("Base currency");
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
     const dialog = screen.getByRole("dialog");
@@ -182,7 +180,7 @@ describe("ExchangeRatesListView", () => {
     const user = userEvent.setup();
     renderWithClient(<ExchangeRatesListView />);
 
-    await screen.findByText("Base currency");
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: /delete/i }));
 
     const confirmDialog = screen.getByRole("alertdialog");
@@ -200,7 +198,7 @@ describe("ExchangeRatesListView", () => {
     const user = userEvent.setup();
     renderWithClient(<ExchangeRatesListView />);
 
-    await screen.findByText("Base currency");
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: /delete/i }));
 
     const confirmDialog = screen.getByRole("alertdialog");

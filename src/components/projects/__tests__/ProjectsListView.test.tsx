@@ -118,6 +118,29 @@ describe("ProjectsListView", () => {
     expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
   });
 
+  // Per the `feature/user-deactivate` request ("On the Dashboard and Project
+  // pages, fix the API so only the user's own project appears") —
+  // `useProjectSelectOptions` scopes this page's data source by role.
+  it("fetches the org-wide project catalog (/projects) for a SystemAdmin", async () => {
+    useAuthStore.setState({ user: { id: "1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: [PROJECT_ALPHA] } });
+    renderWithClient(<ProjectsListView />);
+
+    await screen.findByText("PRJ-ALPHA");
+    expect(apiClient.get).toHaveBeenCalledWith("/projects");
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
+  });
+
+  it("fetches only the signed-in user's own projects (/projects/my) for a non-SystemAdmin", async () => {
+    useAuthStore.setState({ user: { id: "1", email: "sarah@hrsystem.com", role: "ProjectAdmin" } });
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: [PROJECT_ALPHA] } });
+    renderWithClient(<ProjectsListView />);
+
+    await screen.findByText("PRJ-ALPHA");
+    expect(apiClient.get).toHaveBeenCalledWith("/projects/my");
+    expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+  });
+
   it("hides the Actions column and New Project link for a non-manager role", async () => {
     useAuthStore.setState({ user: { id: "1", email: "user@hrsystem.com", role: "User" } });
     (apiClient.get as jest.Mock).mockResolvedValueOnce({ data: { data: [PROJECT_ALPHA] } });

@@ -43,6 +43,12 @@ const systemAdminToken = buildToken({
 
 const userToken = buildToken({ sub: "user-2", email: "user@hrsystem.com", role: "User" });
 
+const projectAdminToken = buildToken({
+  sub: "user-3",
+  email: "projectadmin@d3-sg.com",
+  role: "ProjectAdmin",
+});
+
 const validGeneratePayload = {
   projectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
   billingPeriodStart: "2025-03-01",
@@ -137,6 +143,35 @@ describe("GET /api/invoices", () => {
     const response = await GET(new Request("http://localhost/api/invoices"));
 
     expect(response.status).toBe(502);
+  });
+
+  it("calls Invoice/GetAllInvoices for a SystemAdmin", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: { Items: [], TotalCount: 0, Page: 1, PageSize: 20 } },
+    });
+
+    await GET(new Request("http://localhost/api/invoices"));
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Invoice/GetAllInvoices",
+      expect.objectContaining({ headers: { Authorization: `Bearer ${systemAdminToken}` } })
+    );
+  });
+
+  it("calls Invoice/GetMyInvoices for a ProjectAdmin", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: { Items: [], TotalCount: 0, Page: 1, PageSize: 20 } },
+    });
+
+    const response = await GET(new Request("http://localhost/api/invoices"));
+
+    expect(response.status).toBe(200);
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/Invoice/GetMyInvoices",
+      expect.objectContaining({ headers: { Authorization: `Bearer ${projectAdminToken}` } })
+    );
   });
 });
 

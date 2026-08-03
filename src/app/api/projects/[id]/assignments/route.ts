@@ -16,8 +16,27 @@ interface RouteParams {
 
 /**
  * GET /api/projects/[id]/assignments
- * [Auth][SystemAdmin|ProjectAdmin] Lists resource assignments via
- * `Project/GetProjectAssignments`.
+ * [Auth] Lists resource assignments via `Project/GetProjectAssignments`,
+ * per its documented contract (`docs/HR_System_BE.postman_collection.json`
+ * tags this endpoint `[Auth]` only — no manager-only restriction).
+ *
+ * Deliberately available to *any* authenticated role, not just
+ * `canManageProjects` (SystemAdmin/ProjectAdmin) — unlike `POST` below
+ * (assigning is still manager-only). Every role needs to know whether
+ * *they themselves* are an assigned resource on a project:
+ *   - `MyTimesheetView` (`hooks/useProjects.ts#useProjectAssignmentsForProjects`)
+ *     narrows a plain `Employee`'s loggable projects down to ones they're
+ *     assigned to.
+ *   - `TimesheetHistoryView`'s "own project (assigned user)" gate needs the
+ *     same lookup for a `ProjectAdmin` reviewing entries.
+ *
+ * Restricting this read to managers only (the previous behavior) silently
+ * broke the first case: every fan-out assignment query for a plain
+ * `Employee` came back `403`, so `assignedProjectIds` always resolved to an
+ * empty set and the entire "My Timesheets" grid rendered as "You are not
+ * assigned to any active projects yet" even for an Employee who genuinely
+ * was assigned — see the `feature/user-deactivate` request ("on My
+ * Timesheet, fix the issue where employee does not appear").
  */
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -35,13 +54,6 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json(
       { message: "Your session is invalid. Please sign in again." },
       { status: 401 }
-    );
-  }
-
-  if (!canManageProjects(currentUser.role)) {
-    return NextResponse.json(
-      { message: "You do not have permission to view assignments." },
-      { status: 403 }
     );
   }
 

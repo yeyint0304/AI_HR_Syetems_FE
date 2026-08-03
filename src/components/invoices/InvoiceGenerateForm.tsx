@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { SelectField } from "@/components/ui/SelectField";
 import { Alert } from "@/components/ui/Alert";
-import { useProjectList } from "@/hooks/useProjects";
+import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useCurrencyList } from "@/hooks/useCurrencies";
 import { useGenerateInvoice } from "@/hooks/useInvoices";
 import { useTimesheetEntryList } from "@/hooks/useTimesheetEntries";
@@ -86,7 +86,10 @@ export function InvoiceGenerateForm() {
   const searchParams = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { data: projects, isLoading: isProjectsLoading } = useProjectList();
+  // Scoped to "my projects" for ProjectAdmin, full catalog for SystemAdmin —
+  // see `hooks/useProjects.ts#useProjectSelectOptions` — so a ProjectAdmin
+  // can only generate invoices against a project they actually manage.
+  const { data: projects, isLoading: isProjectsLoading } = useProjectSelectOptions();
   const { data: currencies, isLoading: isCurrenciesLoading } = useCurrencyList();
   const generateInvoiceMutation = useGenerateInvoice();
 

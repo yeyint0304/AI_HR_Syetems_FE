@@ -40,6 +40,9 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/email address/i), "newuser@example.com");
   await user.type(screen.getByLabelText(/^temporary password$/i), "Password1!");
   await user.selectOptions(await screen.findByLabelText(/^role$/i), ROLE_ID);
+  const countryField = await screen.findByLabelText(/^country$/i);
+  await user.click(countryField);
+  await user.click(await screen.findByRole("option", { name: "Singapore (SG)" }));
 }
 
 describe("CreateUserForm", () => {
@@ -153,9 +156,31 @@ describe("CreateUserForm", () => {
     await user.type(screen.getByLabelText(/^username$/i), "newuser");
     await user.type(screen.getByLabelText(/email address/i), "newuser@example.com");
     await user.type(screen.getByLabelText(/^temporary password$/i), "Password1!");
+    const countryField = await screen.findByLabelText(/^country$/i);
+    await user.click(countryField);
+    await user.click(await screen.findByRole("option", { name: "Singapore (SG)" }));
     await user.click(screen.getByRole("button", { name: /create user/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/select a role/i);
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  // Per the `feature/user-deactivate` request ("On the Add User page, make
+  // country a required field").
+  it("requires a country to be selected", async () => {
+    mockRolesResponse();
+    const user = userEvent.setup();
+    renderWithClient(<CreateUserForm />);
+
+    await user.type(screen.getByLabelText(/first name/i), "New");
+    await user.type(screen.getByLabelText(/last name/i), "User");
+    await user.type(screen.getByLabelText(/^username$/i), "newuser");
+    await user.type(screen.getByLabelText(/email address/i), "newuser@example.com");
+    await user.type(screen.getByLabelText(/^temporary password$/i), "Password1!");
+    await user.selectOptions(await screen.findByLabelText(/^role$/i), ROLE_ID);
+    await user.click(screen.getByRole("button", { name: /create user/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/country is required/i);
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
@@ -176,7 +201,7 @@ describe("CreateUserForm", () => {
       email: "newuser@example.com",
       password: "Password1!",
       employeeId: undefined,
-      countryId: null,
+      countryId: "22222222-2222-2222-2222-222222222201",
       roleId: ROLE_ID,
     });
     expect(screen.getByLabelText(/first name/i)).toHaveValue("");

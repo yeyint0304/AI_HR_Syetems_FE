@@ -38,7 +38,7 @@ function mockApi({
   report = { reportGeneratedAt: "2026-07-20T00:00:00Z", startDate: "2026-07-01", endDate: "2026-07-20", totalHours: 0, totalCount: 0, page: 1, pageSize: 100, items: [] },
 }: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url === "/projects") return Promise.resolve({ data: { data: projects } });
+    if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: projects } });
     if (url === "/reports/timesheet") return Promise.resolve({ data: { data: report } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -65,8 +65,16 @@ describe("TimesheetReportView", () => {
     expect(screen.queryByLabelText(/user id/i)).not.toBeInTheDocument();
   });
 
-  it("renders the User ID filter for a ProjectAdmin", () => {
+  it("does not render the User ID filter for a ProjectAdmin (self/team-scoped GenerateMyTimesheetReport has no userId param)", () => {
     useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
+    mockApi();
+    renderWithClient(<TimesheetReportView />);
+
+    expect(screen.queryByLabelText(/user id/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the User ID filter for a SystemAdmin", () => {
+    useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
     mockApi();
     renderWithClient(<TimesheetReportView />);
 
@@ -75,7 +83,7 @@ describe("TimesheetReportView", () => {
 
   it("shows a loading state while the report is being generated", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/timesheet") return new Promise(() => {}); // never resolves
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
@@ -135,7 +143,7 @@ describe("TimesheetReportView", () => {
 
   it("shows an error state with a retry action when the report request fails", async () => {
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === "/projects") return Promise.resolve({ data: { data: [] } });
+      if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [] } });
       if (url === "/reports/timesheet") {
         return Promise.reject({ isAxiosError: true, response: { data: { message: "Unable to generate the timesheet report." } } });
       }
@@ -215,5 +223,64 @@ describe("TimesheetReportView", () => {
     await user.click(screen.getByRole("button", { name: /^reset$/i }));
 
     expect(screen.getByText(/select a date range and click "apply filters"/i)).toBeInTheDocument();
+  });
+
+  describe("Project filter initial fetch scoping", () => {
+    it("loads the Project filter's options from /projects/my for a ProjectAdmin before any report is generated", async () => {
+      useAuthStore.setState({ user: { id: "pa1", email: "pa@hrsystem.com", role: "ProjectAdmin" } });
+      mockApi();
+      renderWithClient(<TimesheetReportView />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+      expect(await screen.findByRole("option", { name: "Project Alpha" })).toBeInTheDocument();
+    });
+
+    it("loads the Project filter's options from /projects/my for a plain Employee/User before any report is generated", async () => {
+      useAuthStore.setState({ user: { id: "u1", email: "user@hrsystem.com", role: "Employee" } });
+      mockApi();
+      renderWithClient(<TimesheetReportView />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects/my"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects");
+    });
+
+    it("loads the Project filter's options from the org-wide /projects for a SystemAdmin", async () => {
+      useAuthStore.setState({ user: { id: "admin1", email: "admin@hrsystem.com", role: "SystemAdmin" } });
+      mockApi();
+      renderWithClient(<TimesheetReportView />);
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/projects"));
+      expect(apiClient.get).not.toHaveBeenCalledWith("/projects/my");
+    });
+  });
+
+  describe("Project/Status filter 'All' reselection", () => {
+    it("lets the user pick a specific project, then switch back to 'All Projects'", async () => {
+      mockApi();
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetReportView />);
+
+      await screen.findByRole("option", { name: "Project Alpha" });
+      const projectSelect = screen.getByLabelText("Project");
+      await user.selectOptions(projectSelect, "Project Alpha");
+      expect(projectSelect).toHaveValue(PROJECT.id);
+
+      await user.selectOptions(projectSelect, "All Projects");
+      expect(projectSelect).toHaveValue("");
+    });
+
+    it("lets the user pick a specific status, then switch back to 'All Statuses'", async () => {
+      mockApi();
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetReportView />);
+
+      const statusSelect = screen.getByLabelText("Status");
+      await user.selectOptions(statusSelect, "Approved");
+      expect(statusSelect).toHaveValue("true");
+
+      await user.selectOptions(statusSelect, "All Statuses");
+      expect(statusSelect).toHaveValue("");
+    });
   });
 });

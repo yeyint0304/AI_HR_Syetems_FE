@@ -1,4 +1,9 @@
-import { canManageReports, REPORT_HUB_ITEMS, REPORT_MANAGER_ROLES } from "@/lib/constants/report.constants";
+import {
+  canManageReports,
+  isProjectScopedReportManager,
+  REPORT_HUB_ITEMS,
+  REPORT_MANAGER_ROLES,
+} from "@/lib/constants/report.constants";
 
 describe("report.constants", () => {
   describe("canManageReports", () => {
@@ -22,6 +27,22 @@ describe("report.constants", () => {
 
     it("returns false for an unrecognized role string", () => {
       expect(canManageReports("NotARealRole")).toBe(false);
+    });
+  });
+
+  describe("isProjectScopedReportManager", () => {
+    it("is true for ProjectAdmin", () => {
+      expect(isProjectScopedReportManager("ProjectAdmin")).toBe(true);
+    });
+
+    it("is false for SystemAdmin", () => {
+      expect(isProjectScopedReportManager("SystemAdmin")).toBe(false);
+    });
+
+    it("is false for a plain User or null/undefined role", () => {
+      expect(isProjectScopedReportManager("User")).toBe(false);
+      expect(isProjectScopedReportManager(null)).toBe(false);
+      expect(isProjectScopedReportManager(undefined)).toBe(false);
     });
   });
 

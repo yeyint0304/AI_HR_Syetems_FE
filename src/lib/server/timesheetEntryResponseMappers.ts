@@ -1,5 +1,9 @@
 import "server-only";
-import type { TimesheetEntry } from "@/types/timesheetEntry.types";
+import type {
+  ProjectAdminTimesheetSummary,
+  TimesheetEntry,
+  TimesheetProjectSummary,
+} from "@/types/timesheetEntry.types";
 import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
 import type { BackendEnvelope } from "@/lib/server/backendEnvelope";
 
@@ -107,4 +111,78 @@ export function mapBackendTimesheetEntryList(raw: unknown): TimesheetEntry[] {
   return extractArray(raw)
     .map(mapBackendTimesheetEntry)
     .filter((entry): entry is TimesheetEntry => entry !== null);
+}
+
+interface RawTimesheetProjectSummary {
+  ProjectId?: string;
+  projectId?: string;
+  ProjectCode?: string;
+  projectCode?: string;
+  ProjectName?: string;
+  projectName?: string;
+  TotalHours?: number;
+  totalHours?: number;
+  ApprovedHours?: number;
+  approvedHours?: number;
+  PendingHours?: number;
+  pendingHours?: number;
+}
+
+function mapBackendProjectSummary(raw: unknown): TimesheetProjectSummary | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as RawTimesheetProjectSummary;
+  const projectId = r.ProjectId ?? r.projectId;
+  if (!projectId) return null;
+
+  return {
+    projectId,
+    projectCode: r.ProjectCode ?? r.projectCode,
+    projectName: r.ProjectName ?? r.projectName,
+    totalHours: r.TotalHours ?? r.totalHours ?? 0,
+    approvedHours: r.ApprovedHours ?? r.approvedHours ?? 0,
+    pendingHours: r.PendingHours ?? r.pendingHours ?? 0,
+  };
+}
+
+interface RawProjectAdminTimesheetSummary {
+  TotalHours?: number;
+  totalHours?: number;
+  ApprovedHours?: number;
+  approvedHours?: number;
+  PendingHours?: number;
+  pendingHours?: number;
+  ProjectSummaries?: unknown[];
+  projectSummaries?: unknown[];
+  Entries?: unknown[];
+  entries?: unknown[];
+}
+
+/**
+ * Maps `TimesheetEntry/GetProjectAdminTimesheetSummary`'s response object
+ * (already unwrapped from the `Data` envelope) — unlike
+ * `mapBackendTimesheetEntryList`, `raw` here is a single object (not an
+ * array), with `ProjectSummaries`/`Entries` array fields nested inside it,
+ * per the saved example in `docs/HR_System_BE.postman_collection.json`.
+ */
+export function mapBackendProjectAdminTimesheetSummary(
+  raw: unknown
+): ProjectAdminTimesheetSummary | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as RawProjectAdminTimesheetSummary;
+
+  const projectSummaries = (r.ProjectSummaries ?? r.projectSummaries ?? [])
+    .map(mapBackendProjectSummary)
+    .filter((summary): summary is TimesheetProjectSummary => summary !== null);
+
+  const entries = (r.Entries ?? r.entries ?? [])
+    .map(mapBackendTimesheetEntry)
+    .filter((entry): entry is TimesheetEntry => entry !== null);
+
+  return {
+    totalHours: r.TotalHours ?? r.totalHours ?? 0,
+    approvedHours: r.ApprovedHours ?? r.approvedHours ?? 0,
+    pendingHours: r.PendingHours ?? r.pendingHours ?? 0,
+    projectSummaries,
+    entries,
+  };
 }

@@ -11,15 +11,24 @@ import {
 } from "@/lib/server/invoiceResponseMappers";
 import { generateInvoiceSchema, invoiceListQuerySchema } from "@/lib/validators/invoice.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageInvoices } from "@/lib/constants/invoice.constants";
+import { canManageInvoices, isProjectScopedInvoiceManager } from "@/lib/constants/invoice.constants";
 
 /**
  * GET /api/invoices
- * [Auth][SystemAdmin|ProjectAdmin] Lists invoices via `Invoice/GetAllInvoices`.
- * Restricted to `INVOICE_MANAGER_ROLES` — see `lib/constants/invoice.constants.ts`
- * for the rationale (invoices expose client billing details and per-resource
- * rate amounts, the same class of sensitive financial data the Cost & Revenue
+ * [Auth][SystemAdmin|ProjectAdmin] Lists invoices. Restricted to
+ * `INVOICE_MANAGER_ROLES` — see `lib/constants/invoice.constants.ts` for the
+ * rationale (invoices expose client billing details and per-resource rate
+ * amounts, the same class of sensitive financial data the Cost & Revenue
  * report is restricted to).
+ *
+ * **Backend endpoint, split by role** (per this app's API-integration
+ * requirement): a `ProjectAdmin` (`isProjectScopedInvoiceManager`) is powered
+ * by `Invoice/GetMyInvoices` — scoped server-side to the projects they
+ * manage — while `SystemAdmin` keeps the org-wide `Invoice/GetAllInvoices`.
+ * Both endpoints share the same documented query parameters
+ * (`docs/HR_System_BE.postman_collection.json`) and return an identically
+ * shaped paginated envelope, so `invoiceListQuerySchema` and
+ * `mapBackendInvoiceList` below are reused as-is for either branch.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -64,8 +73,12 @@ export async function GET(request: Request) {
     );
   }
 
+  const backendPath = isProjectScopedInvoiceManager(currentUser.role)
+    ? "/Invoice/GetMyInvoices"
+    : "/Invoice/GetAllInvoices";
+
   try {
-    const response = await backendApiClient.get("/Invoice/GetAllInvoices", {
+    const response = await backendApiClient.get(backendPath, {
       params: parsedQuery.data,
       headers: { Authorization: `Bearer ${accessToken}` },
     });
