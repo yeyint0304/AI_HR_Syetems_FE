@@ -41,7 +41,7 @@ const userToken = buildToken({ sub: selfUserId, email: "user@hrsystem.com", role
 const adminToken = buildToken({ sub: "admin-1", email: "admin@hrsystem.com", role: "SystemAdmin" });
 const projectAdminToken = buildToken({ sub: "manager-1", email: "pm@hrsystem.com", role: "ProjectAdmin" });
 
-/** Response for the `Project/GetProjectAssignments/{projectId}` lookup `canManagerActOnProjectEntry` performs. */
+/** Response for the `Project/GetProjectAssignments/{projectId}` lookup `canApproverActOnEntry` performs. */
 function assignmentsEnvelope(assignments: Array<{ userId: string }>) {
   return {
     data: {
@@ -53,6 +53,23 @@ function assignmentsEnvelope(assignments: Array<{ userId: string }>) {
         UserId: assignment.userId,
         ResourceRoleTypeId: "role-1",
       })),
+    },
+  };
+}
+
+/** Response for the `Auth/SearchUsers?isAllRole=true` lookup `canApproverActOnEntry` performs (`getUserRoleName`). */
+function userRolesEnvelope(users: Array<{ userId: string; roleName: string }>) {
+  return {
+    data: {
+      StatusCode: 200,
+      IsSuccess: true,
+      Message: "Success",
+      Data: {
+        TotalCount: users.length,
+        PageNo: 1,
+        PageSize: 500,
+        Items: users.map((u) => ({ UserId: u.userId, RoleName: u.roleName })),
+      },
     },
   };
 }
@@ -341,7 +358,25 @@ describe("DELETE /api/timesheet-entries/[id]", () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock)
       .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(userRolesEnvelope([{ userId: otherUserId, roleName: "Employee" }]))
       .mockResolvedValueOnce(assignmentsEnvelope([])); // not an assigned resource
+
+    const response = await DELETE(new Request("http://localhost/api/timesheet-entries/1"), routeParams("1"));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.message).toMatch(/do not have permission/i);
+    expect(backendApiClient.delete).not.toHaveBeenCalled();
+  });
+
+  // `feature/user-deactivate`: "For System Admin, their timesheet can only be
+  // approved by other System Admins" — a ProjectAdmin cannot reject a
+  // SystemAdmin's entry either, even on a project they are assigned to.
+  it("403s when a ProjectAdmin rejects (deletes) a SystemAdmin's entry, even on a project they are assigned to", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(userRolesEnvelope([{ userId: otherUserId, roleName: "SystemAdmin" }]));
 
     const response = await DELETE(new Request("http://localhost/api/timesheet-entries/1"), routeParams("1"));
     const body = await response.json();
@@ -355,6 +390,7 @@ describe("DELETE /api/timesheet-entries/[id]", () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
     (backendApiClient.get as jest.Mock)
       .mockResolvedValueOnce(ownEntryEnvelope({ UserId: otherUserId }))
+      .mockResolvedValueOnce(userRolesEnvelope([{ userId: otherUserId, roleName: "Employee" }]))
       .mockResolvedValueOnce(assignmentsEnvelope([{ userId: "manager-1" }]));
     (backendApiClient.delete as jest.Mock).mockResolvedValueOnce({
       data: { StatusCode: 200, IsSuccess: true, Message: "Timesheet entry deleted successfully.", Data: null },

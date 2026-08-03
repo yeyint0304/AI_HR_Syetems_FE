@@ -5,6 +5,7 @@ import type {
   ProjectAdminTimesheetSummaryFilters,
   TimesheetEntry,
   TimesheetEntryListFilters,
+  TimesheetEntryUserRole,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
 
@@ -101,6 +102,21 @@ export async function getProjectAdminTimesheetSummaryRequest(
   const { data } = await apiClient.get<{ data: ProjectAdminTimesheetSummary }>(
     "/timesheet-entries/project-admin-summary",
     { params: filters }
+  );
+  return data.data;
+}
+
+/**
+ * Every user's system role (`SystemAdmin`/`ProjectAdmin`/`Employee`), backing
+ * `TimesheetHistoryView`'s Approve/Reject button gating for the
+ * `feature/user-deactivate` rule "a System Admin's timesheet can only be
+ * approved by other System Admins" (see
+ * `app/api/timesheet-entries/user-roles/route.ts` and
+ * `types/timesheetEntry.types.ts#TimesheetEntryUserRole`).
+ */
+export async function getTimesheetEntryUserRolesRequest(): Promise<TimesheetEntryUserRole[]> {
+  const { data } = await apiClient.get<{ data: TimesheetEntryUserRole[] }>(
+    "/timesheet-entries/user-roles"
   );
   return data.data;
 }

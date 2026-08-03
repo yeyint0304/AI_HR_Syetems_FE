@@ -18,6 +18,7 @@ import {
   useProjectAdminTimesheetSummary,
   useRejectTimesheetEntry,
   useTimesheetEntryList,
+  useTimesheetEntryUserRoles,
   useUpdateTimesheetEntry,
 } from "@/hooks/useTimesheetEntries";
 import {
@@ -32,6 +33,7 @@ import {
   MIN_ENTRY_HOURS,
 } from "@/lib/constants/timesheetEntry.constants";
 import { canManageInvoices } from "@/lib/constants/invoice.constants";
+import { USER_ROLES } from "@/lib/constants/auth.constants";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { formatDisplayDate } from "@/lib/utils/date";
 import { compareDateOnly, getTodayDateOnly } from "@/lib/utils/week";
@@ -122,52 +124,60 @@ function sumHours(entries: TimesheetEntry[]): number {
  *     your own work is never project-scoped).
  *   - **Approve** / **Reject** — shown whenever the entry is still pending,
  *     its period isn't locked, the signed-in user is a manager (`canApprove`),
- *     and they're authorized to act on that entry's project
- *     (`canReviewEntry`, below) — including their own entry. A manager who
- *     owns a still-pending, unlocked entry therefore sees Edit *and*
- *     Approve/Reject together on that row (assuming they're also authorized
- *     for its project).
+ *     it is *not* their own entry, and they're authorized to act on that
+ *     entry's project and its owner's role (`canReviewEntry`, below). A
+ *     manager who owns a still-pending, unlocked entry sees only Edit on
+ *     that row — never Approve/Reject (see "Self-review is never permitted"
+ *     below).
  *   - **Locked** — shown instead of the above whenever no gate applies (a
  *     locked-period entry, an approved entry from a previous day, a
  *     non-manager viewing another user's entry — who never reaches this row
- *     at all since the entries query is scoped to their own `userId` — or,
- *     per the `bugs/timesheet-history` feature request "if not his own
- *     project (not assign user) then don't add any action for it", a
- *     `ProjectAdmin` reviewing an entry for a project they are *not*
- *     assigned to).
+ *     at all since the entries query is scoped to their own `userId` —
+ *     a manager viewing their *own* pending entry, per the
+ *     `feature/user-deactivate` request "System Admin and Project Admin
+ *     cannot approve or reject their own timesheet", or, per the
+ *     `bugs/timesheet-history` feature request "if not his own project (not
+ *     assign user) then don't add any action for it", a `ProjectAdmin`
+ *     reviewing an entry for a project they are *not* assigned to, or a
+ *     `SystemAdmin`'s entry, which only another `SystemAdmin` may act on).
  *
- * **Project-assignment scope for Approve/Reject** (`canReviewEntry`):
- * a `ProjectAdmin` (`isProjectScopedTimesheetManager`, per
- * `lib/constants/timesheetEntry.constants.ts`) may only Approve/Reject
- * entries for projects they are an assigned resource on
- * (`Project/GetProjectAssignments`, fetched in bulk for every distinct
- * project in the visible list via `useProjectAssignmentsForProjects`) —
- * outside those projects they get no action at all on someone else's entry,
- * even though they still see the row (for organization-wide visibility).
- * `SystemAdmin` is exempt from this scoping and can Approve/Reject anything,
- * consistent with its unrestricted authority elsewhere in this app (e.g.
- * `ADMIN_ROUTE_PREFIX`). While the per-project assignment queries are still
- * loading, `canReviewEntry` conservatively returns `false` (fails closed to
- * "Locked") rather than flashing Approve/Reject buttons that might
- * immediately disappear once the real assignment data arrives.
+ * **Approve/Reject authorization scope** (`canReviewEntry`), per the
+ * `feature/user-deactivate` request "System Admin and Project Admin cannot
+ * approve or reject their own timesheet... For Project Admin, their
+ * timesheet can only be approved by other Project Admins or System Admins.
+ * For System Admin, their timesheet can only be approved by other System
+ * Admins":
+ *   - **Never your own entry** (`isOwnEntry`) — this reverses the previous
+ *     "self-approval is intentionally permitted" behavior; a manager must
+ *     always find another manager to review their own timesheet now.
+ *   - **A `SystemAdmin`'s entry can only be reviewed by another `SystemAdmin`**
+ *     — a `ProjectAdmin` (`isProjectScopedManager`) is blocked here even for
+ *     a project they manage. Resolved via `useTimesheetEntryUserRoles`
+ *     (`userRoleById`, below), since none of the Timesheet Entry endpoints
+ *     return the owner's *system* role. While that query is still loading,
+ *     `canReviewEntry` conservatively returns `false` (fails closed) rather
+ *     than flashing a button that might immediately disappear once the real
+ *     role data arrives — mirroring `assignedProjectIds`' own loading
+ *     behavior below.
+ *   - **Project-assignment scope** — unchanged from before: a `ProjectAdmin`
+ *     may only Approve/Reject a (non-`SystemAdmin`-owned) entry for projects
+ *     they are an assigned resource on (`Project/GetProjectAssignments`,
+ *     fetched in bulk for every distinct project in the visible list via
+ *     `useProjectAssignmentsForProjects`) — outside those projects they get
+ *     no action at all on someone else's entry, even though they still see
+ *     the row (for organization-wide visibility). `SystemAdmin` is exempt
+ *     from this scoping (and the role-based one above) and can Approve/Reject
+ *     any *other* user's entry, consistent with its unrestricted authority
+ *     elsewhere in this app (e.g. `ADMIN_ROUTE_PREFIX`).
  *
- * `isPeriodUnlockedFor` gates both of the above: once a timesheet period is
- * locked, every entry inside it — regardless of whose it is — freezes to
- * "Locked", so neither Edit nor Approve/Reject can act on an entry whose
- * period has since been locked.
+ * `isPeriodUnlockedFor` gates both Edit and Approve/Reject: once a timesheet
+ * period is locked, every entry inside it — regardless of whose it is —
+ * freezes to "Locked".
  *
- * Self-approval is intentionally permitted, not an oversight: this is a
- * deliberate product decision (see the `bugs/timesheet-history` feature
- * request), and it is *consistent* with the backend contract rather than a
- * new capability layered on top of it — `TimesheetEntry/ApproveTimesheetEntry`
- * is documented as `[Auth]`-only with no ownership restriction, and
- * `canManageAnyTimesheetEntry` (`lib/constants/timesheetEntry.constants.ts`)
- * already grants a SystemAdmin/ProjectAdmin authority over *any* user's
- * entries, their own included. `app/api/timesheet-entries/[id]/approve/route.ts`
- * enforces this server-side (entry-existence + already-approved checks
- * mirroring the ownership-fetch pattern in the sibling `PUT`/`DELETE`
- * routes) so the rule holds regardless of what this UI renders, not only
- * because the UI happens to show these buttons.
+ * All three rules above are also enforced server-side, not just by this UI —
+ * see `lib/server/timesheetEntryAuthorization.ts#canApproverActOnEntry`,
+ * consulted by both `app/api/timesheet-entries/[id]/approve/route.ts` and
+ * the `DELETE` handler in `app/api/timesheet-entries/[id]/route.ts` (reject).
  *
  * "Reject" (`useRejectTimesheetEntry`) sends a pending entry back for
  * correction. The backend's Timesheet Entry module documents no dedicated
@@ -213,6 +223,22 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   // invoice"): once approved entries exist here, this link is the entry point
   // into invoicing them, mirroring the "+ Generate Invoice" button on `/invoices`.
   const canGenerateInvoice = canManageInvoices(user?.role);
+
+  // Only a `ProjectAdmin` needs the user-role directory below — a
+  // `SystemAdmin`'s Approve/Reject authority never depends on an entry
+  // owner's role (see `canReviewEntry`'s "SystemAdmin's entry can only be
+  // reviewed by another SystemAdmin" rule, which only ever restricts a
+  // `ProjectAdmin`).
+  const {
+    data: userRoles,
+    isLoading: isUserRolesLoading,
+  } = useTimesheetEntryUserRoles(isProjectScopedManager);
+
+  const userRoleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of userRoles ?? []) map.set(item.userId, item.roleName);
+    return map;
+  }, [userRoles]);
 
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -444,16 +470,21 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   /**
    * Whether the signed-in manager may Approve/Reject this specific entry —
    * always requires it still be pending (there is no "unapprove" action),
-   * plus the "own project (assigned user)" gate from the
-   * `bugs/timesheet-history` feature request. See the component doc
-   * comment's "Project-assignment scope for Approve/Reject" section for the
-   * full rationale.
+   * plus the self-review ban, SystemAdmin-owner gate, and "own project
+   * (assigned user)" gate from the `feature/user-deactivate` and
+   * `bugs/timesheet-history` feature requests. See the component doc
+   * comment's "Approve/Reject authorization scope" section for the full
+   * rationale, and `lib/server/timesheetEntryAuthorization.ts#canApproverActOnEntry`
+   * for the server-side counterpart this mirrors.
    */
   function canReviewEntry(entry: TimesheetEntry): boolean {
     if (entry.isApproved) return false;
     if (!isPeriodUnlockedFor(entry)) return false;
     if (!canApprove) return false;
-    if (!isProjectScopedManager) return true; // SystemAdmin: unrestricted.
+    if (isOwnEntry(entry)) return false; // Never your own entry, regardless of role.
+    if (!isProjectScopedManager) return true; // SystemAdmin: unrestricted otherwise.
+    if (isUserRolesLoading) return false; // Fail closed until the owner's role is known.
+    if (userRoleById.get(entry.userId) === USER_ROLES.SYSTEM_ADMIN) return false;
     return assignedProjectIds?.has(entry.projectId) ?? false;
   }
 

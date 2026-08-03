@@ -11,7 +11,7 @@ import {
 import { updateTimesheetEntrySchema } from "@/lib/validators/timesheetEntry.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
-import { canManagerActOnProjectEntry } from "@/lib/server/timesheetEntryAuthorization";
+import { canApproverActOnEntry } from "@/lib/server/timesheetEntryAuthorization";
 import type { AuthUser } from "@/types/auth.types";
 import type { TimesheetEntry } from "@/types/timesheetEntry.types";
 
@@ -129,7 +129,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
  * pending entry for a project they manage — that "act on any user in my
  * project" authority is deliberately scoped to the dedicated `/approve`
  * route and the `DELETE` handler below (`reject`) via
- * `canManagerActOnProjectEntry` (`lib/server/timesheetEntryAuthorization.ts`),
+ * `canApproverActOnEntry` (`lib/server/timesheetEntryAuthorization.ts`),
  * and does not extend to editing.
  */
 export async function PUT(request: Request, { params }: RouteParams) {
@@ -247,13 +247,19 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     const result = await fetchOwnedEntry(id, accessToken, currentUser);
     if (!result.ok) return result.response;
 
-    // "Own project (assigned user)" gate: a ProjectAdmin rejecting (deleting)
-    // *someone else's* entry must be an assigned resource on that entry's
-    // project (see `lib/server/timesheetEntryAuthorization.ts`). Deleting
-    // your own entry is always allowed regardless.
+    // "Reject someone else's entry" gate — only reached when `result.entry`
+    // isn't the caller's own (deleting/clearing your *own* pending entry, the
+    // self-service "My Timesheet" use case, is always allowed regardless of
+    // role and intentionally never goes through `canApproverActOnEntry`,
+    // which would otherwise always deny a self-owned entry per its rule 1).
+    // For someone else's entry, `canApproverActOnEntry`
+    // (`lib/server/timesheetEntryAuthorization.ts`) enforces: a SystemAdmin's
+    // entry may only be rejected by another SystemAdmin, and a ProjectAdmin
+    // must be an assigned resource on that entry's project; SystemAdmin is
+    // exempt from both.
     if (
       result.entry.userId !== currentUser.id &&
-      !(await canManagerActOnProjectEntry(currentUser, result.entry.projectId, accessToken))
+      !(await canApproverActOnEntry(currentUser, result.entry, accessToken))
     ) {
       return NextResponse.json(
         { message: "You do not have permission to delete this timesheet entry." },

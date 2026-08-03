@@ -105,3 +105,16 @@ export interface ProjectAdminTimesheetSummary {
 export interface ProjectAdminTimesheetSummaryFilters {
   projectId?: string;
 }
+
+/**
+ * One user's *system* role (`SystemAdmin`/`ProjectAdmin`/`Employee`), backing
+ * `TimesheetHistoryView`'s Approve/Reject button gating for the
+ * `feature/user-deactivate` rule "a System Admin's timesheet can only be
+ * approved by other System Admins" — distinct from a `TimesheetEntry`'s
+ * per-project `resourceRoleTypeName` (job title), which none of this app's
+ * Timesheet Entry endpoints expose. See `GET /api/timesheet-entries/user-roles`.
+ */
+export interface TimesheetEntryUserRole {
+  userId: string;
+  roleName: string;
+}
