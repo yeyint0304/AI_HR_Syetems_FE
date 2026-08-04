@@ -212,6 +212,19 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  // One-shot guard consumed by the drafts-sync block below (see
+  // `draftsSignature`) — set right before `handleSaveAll` shows its
+  // "Timesheet saved successfully" / error banner, so that the entries
+  // refetch each mutation's `onSuccess` triggers (`invalidateQueries` in
+  // `useCreateTimesheetEntry`/`useUpdateTimesheetEntry`/`useDeleteTimesheetEntry`)
+  // doesn't immediately wipe the just-shown message out from under the user
+  // on the very next render. Without this, the banner was only ever visible
+  // for a single frame before disappearing, since the refetch that follows a
+  // successful save resolves almost instantly against the local API. Plain
+  // state (read/adjusted during render, like `syncedDraftsSignature` below)
+  // rather than a ref, since this codebase's lint rules forbid reading/writing
+  // refs during render.
+  const [preserveSaveMessage, setPreserveSaveMessage] = useState(false);
 
   const sortedPeriods = useMemo(() => {
     if (!periods) return [];
@@ -344,8 +357,15 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
       setDrafts(next);
     }
     setFieldErrors({});
-    setSaveError(null);
-    setSaveSuccess(null);
+    if (preserveSaveMessage) {
+      // This resync was caused by our own successful "Save All" (see
+      // `preserveSaveMessage`'s doc comment above) — keep the save banner
+      // visible instead of clearing it, and consume the one-shot guard.
+      setPreserveSaveMessage(false);
+    } else {
+      setSaveError(null);
+      setSaveSuccess(null);
+    }
   }
 
   // Daily/weekly totals, computed from every loggable project regardless of
@@ -512,6 +532,14 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
         }
       }
     }
+
+    // Every successful create/update/delete above just triggered an
+    // `invalidateQueries(["timesheet-entries"])` (see `useTimesheetEntries.ts`),
+    // which refetches in the background and will change `draftsSignature` on
+    // the next render — see `preserveSaveMessage`'s doc comment for why this
+    // guard is needed to keep the banner set below from being cleared
+    // immediately.
+    setPreserveSaveMessage(true);
 
     if (failureCount > 0) {
       setSaveError(

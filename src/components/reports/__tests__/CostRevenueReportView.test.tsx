@@ -195,22 +195,40 @@ describe("CostRevenueReportView", () => {
     );
   });
 
-  it("sends the year/month parsed from the native month input", async () => {
+  it("sends the year/month selected via the month/year calendar picker", async () => {
     mockApi();
     const user = userEvent.setup();
     renderWithClient(<CostRevenueReportView />);
 
-    const monthInput = screen.getByLabelText(/^month$/i);
-    await user.clear(monthInput);
-    await user.type(monthInput, "2026-03");
+    await user.click(screen.getByRole("button", { name: /^month$/i }));
+    await user.click(screen.getByRole("button", { name: /previous year/i }));
+    await user.click(screen.getByRole("button", { name: "March" }));
 
     await user.click(screen.getByRole("button", { name: /^apply$/i }));
 
     await screen.findByText(/no cost\/revenue data for the selected month/i);
+    const expectedYear = new Date().getFullYear() - 1;
     expect(apiClient.get).toHaveBeenCalledWith(
       "/reports/cost-revenue",
-      expect.objectContaining({ params: expect.objectContaining({ year: 2026, month: 3 }) })
+      expect.objectContaining({ params: expect.objectContaining({ year: expectedYear, month: 3 }) })
     );
+  });
+
+  it("opens the month/year calendar picker showing the current month and year by default", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderWithClient(<CostRevenueReportView />);
+
+    const now = new Date();
+    const monthTrigger = screen.getByRole("button", { name: /^month$/i });
+
+    await user.click(monthTrigger);
+
+    expect(screen.getByRole("dialog", { name: /choose month and year/i })).toBeInTheDocument();
+    expect(screen.getByText(String(now.getFullYear()))).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("loads the Project filter's options from /projects/my for a ProjectAdmin before any report is generated", async () => {

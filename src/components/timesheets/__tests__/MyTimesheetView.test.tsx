@@ -448,6 +448,119 @@ describe("MyTimesheetView", () => {
     );
   });
 
+  // Regression test: the "Timesheet saved successfully" banner used to be
+  // cleared on the very next render after a successful "Save All", because
+  // each mutation's `onSuccess` invalidates the `timesheet-entries` query
+  // (see `useCreateTimesheetEntry` etc.), and the resulting refetch — once it
+  // actually reflects the newly-persisted entry, unlike the other tests'
+  // static `mockApi` fixtures — changes `draftsSignature`, which used to
+  // unconditionally clear `saveSuccess`/`saveError`. This mocks
+  // `apiClient.get("/timesheet-entries")` to return the freshly-created entry
+  // after the `POST` resolves, so the invalidation-triggered refetch behaves
+  // like the real backend, and asserts the banner survives it.
+  it("keeps the success banner visible after Save All's background entries refetch resolves", async () => {
+    let currentEntries: unknown[] = [];
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/timesheet-periods") return Promise.resolve({ data: { data: [PERIOD] } });
+      if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT] } });
+      if (url === "/timesheet-entries") return Promise.resolve({ data: { data: currentEntries } });
+      const assignmentsMatch = url.match(/^\/projects\/(.+)\/assignments$/);
+      if (assignmentsMatch) {
+        return Promise.resolve({
+          data: { data: [{ id: "assignment-1", userId: CURRENT_USER_ID, resourceRoleTypeId: "role-1" }] },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    const savedEntry = { ...MONDAY_ENTRY, hours: 8, taskDescription: "New feature work" };
+    (apiClient.post as jest.Mock).mockImplementation(() => {
+      currentEntries = [savedEntry];
+      return Promise.resolve({ data: { data: savedEntry } });
+    });
+
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    const mondayInput = await screen.findByLabelText(/Project Alpha hours on Jan 6/i);
+    await user.type(mondayInput, "8");
+    const notesField = await screen.findByLabelText("Jan 6");
+    await user.type(notesField, "New feature work");
+    await user.click(screen.getByRole("button", { name: /^save all$/i }));
+
+    expect(await screen.findByText(/timesheet saved successfully/i)).toBeInTheDocument();
+
+    // Wait for the invalidation-triggered background refetch of
+    // `/timesheet-entries` (the second call — the first was the initial load)
+    // to actually happen before asserting the banner is still there.
+    await waitFor(() => {
+      const entryFetches = (apiClient.get as jest.Mock).mock.calls.filter(([url]) => url === "/timesheet-entries");
+      expect(entryFetches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(screen.getByText(/timesheet saved successfully/i)).toBeInTheDocument();
+  });
+
+  // Regression probe for `preserveSaveMessage`: the guard is a one-shot flag
+  // set right before the save banner is shown, then consumed by *whatever*
+  // drafts-resync happens next — it doesn't check that the resync was
+  // actually caused by the save's own background refetch. If the user
+  // switches to a different period while a slow "Save All" is still in
+  // flight (nothing but the Save button itself is disabled during `isSaving`
+  // — the period `<select>` is not), the resync triggered by *that* period
+  // switch consumes the guard instead, and the stale "saved successfully"
+  // banner then survives into the newly-selected period's view once the
+  // save's mutation/invalidation eventually resolves.
+  it("does not leak a stale success banner into a different period selected while Save All is still in flight", async () => {
+    const PERIOD2_ID = "3fa85f64-5717-4562-b3fc-2c963f66af20";
+    const PERIOD2 = { ...PERIOD, id: PERIOD2_ID };
+    let resolvePost: (() => void) | null = null;
+
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === "/timesheet-periods") return Promise.resolve({ data: { data: [PERIOD, PERIOD2] } });
+      if (url === "/projects") return Promise.resolve({ data: { data: [PROJECT] } });
+      if (url === "/timesheet-entries") return Promise.resolve({ data: { data: [] } });
+      const assignmentsMatch = url.match(/^\/projects\/(.+)\/assignments$/);
+      if (assignmentsMatch) {
+        return Promise.resolve({
+          data: { data: [{ id: "assignment-1", userId: CURRENT_USER_ID, resourceRoleTypeId: "role-1" }] },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    (apiClient.post as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = () => resolve({ data: { data: { ...MONDAY_ENTRY, hours: 8 } } });
+        })
+    );
+
+    const user = userEvent.setup();
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    const mondayInput = await screen.findByLabelText(/Project Alpha hours on Jan 6/i);
+    await user.type(mondayInput, "8");
+    const notesField = await screen.findByLabelText("Jan 6");
+    await user.type(notesField, "New feature work");
+    await user.click(screen.getByRole("button", { name: /^save all$/i }));
+
+    // Save is now in flight (POST unresolved). Switch to the other period
+    // before it resolves — nothing prevents this today.
+    const periodSelect = screen.getByLabelText(/timesheet period/i);
+    await user.selectOptions(periodSelect, PERIOD2_ID);
+    expect(screen.queryByText(/timesheet saved successfully/i)).not.toBeInTheDocument();
+
+    // Now let the original save actually resolve.
+    resolvePost?.();
+
+    // Give the mutation's `onSuccess`/invalidation + refetch a chance to run.
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The user is still looking at PERIOD2 — the success banner from the
+    // save against PERIOD should not appear here.
+    expect(screen.queryByText(/timesheet saved successfully/i)).not.toBeInTheDocument();
+  });
+
   it("blocks Save All and shows a field error when hours are entered without a task description", async () => {
     mockApi({ entries: [] });
     const user = userEvent.setup();
