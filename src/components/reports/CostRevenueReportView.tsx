@@ -3,27 +3,29 @@
 import { Fragment, useMemo, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { MonthYearPicker } from "@/components/ui/MonthYearPicker";
 import { SelectField } from "@/components/ui/SelectField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { useProjectSelectOptions } from "@/hooks/useProjects";
 import { useMonthlyCostRevenue } from "@/hooks/useReports";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { buildMonthlyCostRevenueExportUrl } from "@/lib/api/report.api";
-import { EXPORT_FORMAT_OPTIONS } from "@/lib/constants/report.constants";
+import { EXPORT_FORMAT_OPTIONS, MAX_REPORT_YEAR, MIN_REPORT_YEAR } from "@/lib/constants/report.constants";
 import { monthlyCostRevenueFilterSchema } from "@/lib/validators/report.validators";
 import { getApiErrorMessage } from "@/lib/utils/getApiErrorMessage";
 import { HorizontalBarChart } from "@/components/reports/HorizontalBarChart";
 import type { MonthlyCostRevenueFilters } from "@/types/report.types";
 
 interface DraftFilters {
-  /** Combined `yyyy-MM` value bound to a native `<input type="month">`. */
-  month: string;
+  /** Year/month bound to the `MonthYearPicker` calendar filter. */
+  year: number;
+  month: number;
   projectId: string;
 }
 
-function getDefaultMonthValue(): string {
+function getDefaultYearMonth(): { year: number; month: number } {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
 function formatMoney(value: number, symbol: string | undefined): string {
@@ -47,7 +49,7 @@ function formatMoney(value: number, symbol: string | undefined): string {
  */
 export function CostRevenueReportView() {
   const [draftFilters, setDraftFilters] = useState<DraftFilters>({
-    month: getDefaultMonthValue(),
+    ...getDefaultYearMonth(),
     projectId: "",
   });
   const [appliedFilters, setAppliedFilters] = useState<MonthlyCostRevenueFilters | null>(null);
@@ -78,10 +80,9 @@ export function CostRevenueReportView() {
   function handleApplyFilters() {
     setFilterError(null);
 
-    const [yearPart, monthPart] = draftFilters.month.split("-");
     const parsed = monthlyCostRevenueFilterSchema.safeParse({
-      year: yearPart,
-      month: monthPart,
+      year: draftFilters.year,
+      month: draftFilters.month,
       projectId: draftFilters.projectId || undefined,
     });
     if (!parsed.success) {
@@ -160,16 +161,14 @@ export function CostRevenueReportView() {
         className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:flex-wrap sm:items-end"
       >
         <div className="w-full sm:w-48">
-          <label htmlFor="cost-revenue-month" className="text-sm font-medium text-slate-700">
-            Month
-          </label>
-          <input
+          <MonthYearPicker
             id="cost-revenue-month"
-            type="month"
-            required
-            value={draftFilters.month}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, month: event.target.value }))}
-            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            label="Month"
+            year={draftFilters.year}
+            month={draftFilters.month}
+            onChange={(year, month) => setDraftFilters((prev) => ({ ...prev, year, month }))}
+            minYear={MIN_REPORT_YEAR}
+            maxYear={MAX_REPORT_YEAR}
           />
         </div>
         <div className="w-full sm:w-56">
