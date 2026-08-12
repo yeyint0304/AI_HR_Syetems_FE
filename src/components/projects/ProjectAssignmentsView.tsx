@@ -56,13 +56,14 @@ function getInitials(name?: string): string {
  *   - "User" is a searchable, scroll-paginated combobox
  *     (`components/ui/SearchableSelectField.tsx`) sourced from
  *     `Auth/SearchUsers` (`hooks/useAuth.ts#useUnassignedUsersInfinite`),
- *     scoped by `isAllRole` (`false` for a `ProjectAdmin`, `true` for a
- *     `SystemAdmin` — see `app/api/auth/unassigned-users/route.ts`) — note
- *     this returns users backend-wide, not scoped to "not yet assigned to
- *     *this* project", so a user already assigned to a different project may
- *     still appear here (a limitation of the documented backend contract,
- *     not this screen). Typing filters the list (debounced); scrolling to
- *     the bottom of the list loads the next page.
+ *     always requested with `isAllRole=false` regardless of the caller's own
+ *     role (`SystemAdmin` or `ProjectAdmin` — see
+ *     `app/api/auth/unassigned-users/route.ts`) — note this returns users
+ *     backend-wide, not scoped to "not yet assigned to *this* project", so a
+ *     user already assigned to a different project may still appear here (a
+ *     limitation of the documented backend contract, not this screen).
+ *     Typing filters the list (debounced); scrolling to the bottom of the
+ *     list loads the next page.
  *   - "Resource role" is sourced from `ResourceRoleType/GetAllResourceRoleTypes`
  *     (`hooks/useResourceRoleTypes.ts`) — a small, fully-loaded list, so it
  *     stays a plain `SelectField`.

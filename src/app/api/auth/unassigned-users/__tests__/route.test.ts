@@ -136,7 +136,7 @@ describe("GET /api/auth/unassigned-users", () => {
     );
   });
 
-  it("requests isAllRole=true for a SystemAdmin caller", async () => {
+  it("requests isAllRole=false for a SystemAdmin caller too", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(systemAdminToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
       data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: [] },
@@ -146,7 +146,7 @@ describe("GET /api/auth/unassigned-users", () => {
 
     expect(backendApiClient.get).toHaveBeenCalledWith(
       "/Auth/SearchUsers",
-      expect.objectContaining({ params: { page: 1, pageSize: 20, isAllRole: true } })
+      expect.objectContaining({ params: { page: 1, pageSize: 20, isAllRole: false } })
     );
   });
 
