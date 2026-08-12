@@ -116,6 +116,13 @@ interface MockOptions {
   assignments?: Record<string, unknown[]>;
   /** `{ userId, roleName }[]` for `/timesheet-entries/user-roles` (the ProjectAdmin-only SystemAdmin-owner gate). Defaults to empty — only relevant when a ProjectAdmin is signed in. */
   userRoles?: unknown[];
+  /**
+   * Total entries across every page (`feature/timesheets-pagination`) — lets
+   * pagination-focused tests simulate a history longer than the one page of
+   * `entries` handed to this mock. Defaults to `entries.length` (a single,
+   * complete page), matching every existing non-pagination-focused test.
+   */
+  totalCount?: number;
 }
 
 function mockApi({
@@ -124,17 +131,40 @@ function mockApi({
   entries = [],
   assignments = {},
   userRoles = [],
+  totalCount = entries.length,
 }: MockOptions = {}) {
   (apiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === "/timesheet-periods") return Promise.resolve({ data: { data: periods } });
     if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: projects } });
-    if (url === "/timesheet-entries") return Promise.resolve({ data: { data: entries } });
+    if (url === "/timesheet-entries") {
+      return Promise.resolve({
+        data: {
+          data: entries,
+          totalCount,
+          page: 1,
+          pageSize: 20,
+          totalPages: Math.max(1, Math.ceil(totalCount / 20)),
+        },
+      });
+    }
     // ProjectAdmin's dedicated summary endpoint (`GetProjectAdminTimesheetSummary`) —
     // `entries` is reused here so every existing entries-based assertion works
     // identically regardless of which role/endpoint powered the fetch.
     if (url === "/timesheet-entries/project-admin-summary") {
       return Promise.resolve({
-        data: { data: { totalHours: 0, approvedHours: 0, pendingHours: 0, projectSummaries: [], entries } },
+        data: {
+          data: {
+            totalHours: 0,
+            approvedHours: 0,
+            pendingHours: 0,
+            projectSummaries: [],
+            entries,
+            totalCount,
+            page: 1,
+            pageSize: 20,
+            totalPages: Math.max(1, Math.ceil(totalCount / 20)),
+          },
+        },
       });
     }
     if (url === "/timesheet-entries/user-roles") return Promise.resolve({ data: { data: userRoles } });
@@ -408,6 +438,67 @@ describe("TimesheetHistoryView", () => {
         expect.objectContaining({ params: expect.objectContaining({ userId: CURRENT_USER_ID }) })
       )
     );
+  });
+
+  describe("pagination (feature/timesheets-pagination)", () => {
+    it("requests page 1 with the default page size on first load", async () => {
+      mockApi({ entries: [PENDING_ENTRY] });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries",
+          expect.objectContaining({ params: expect.objectContaining({ page: 1, pageSize: 20 }) })
+        )
+      );
+    });
+
+    it("shows Previous/Next controls and requests page 2 after clicking Next", async () => {
+      // 25 entries total, only one page's worth (`PENDING_ENTRY`) returned by
+      // the mocked first-page response — `totalCount` alone is enough to make
+      // `TablePagination` render Previous/Next (it derives `totalPages` from
+      // the response, not from how many rows happen to be on this page).
+      mockApi({ entries: [PENDING_ENTRY], totalCount: 25 });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const nextButton = await screen.findByRole("button", { name: /^next$/i });
+      await user.click(nextButton);
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries",
+          expect.objectContaining({ params: expect.objectContaining({ page: 2, pageSize: 20 }) })
+        )
+      );
+    });
+
+    it("resets back to page 1 when a new filter is applied", async () => {
+      mockApi({ entries: [PENDING_ENTRY], totalCount: 25 });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const nextButton = await screen.findByRole("button", { name: /^next$/i });
+      await user.click(nextButton);
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries",
+          expect.objectContaining({ params: expect.objectContaining({ page: 2 }) })
+        )
+      );
+
+      await user.selectOptions(screen.getByLabelText(/^project$/i), PROJECT_ID);
+      await user.click(screen.getByRole("button", { name: /^filter$/i }));
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries",
+          expect.objectContaining({
+            params: expect.objectContaining({ page: 1, projectId: PROJECT_ID }),
+          })
+        )
+      );
+    });
   });
 
   it("does not show a Generate Invoice link for a plain User", async () => {

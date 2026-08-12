@@ -108,7 +108,7 @@ describe("GET /api/timesheet-entries/project-admin-summary", () => {
 
     expect(backendApiClient.get).toHaveBeenCalledWith(
       "/TimesheetEntry/GetProjectAdminTimesheetSummary",
-      expect.objectContaining({ params: { projectId: PROJECT_ID } })
+      expect.objectContaining({ params: { projectId: PROJECT_ID, page: 1, pageSize: 20 } })
     );
   });
 
@@ -123,7 +123,7 @@ describe("GET /api/timesheet-entries/project-admin-summary", () => {
     expect(response.status).toBe(200);
     expect(backendApiClient.get).toHaveBeenCalledWith(
       "/TimesheetEntry/GetProjectAdminTimesheetSummary",
-      expect.objectContaining({ params: { projectId: undefined } })
+      expect.objectContaining({ params: { projectId: undefined, page: 1, pageSize: 20 } })
     );
   });
 
@@ -175,6 +175,62 @@ describe("GET /api/timesheet-entries/project-admin-summary", () => {
         pendingHours: 20,
         projectSummaries: [expect.objectContaining({ projectId: PROJECT_ID, totalHours: 40 })],
         entries: [expect.objectContaining({ id: "5a24c616-eba8-4c6f-b4dd-1928a896d792", hours: 20 })],
+      })
+    );
+  });
+
+  // `feature/timesheets-pagination`: this endpoint's `Items`/`TotalCount`/
+  // `TotalPages`/`PageNo`/`PageSize` fields mean it paginates its entry list
+  // just like `GetAllTimesheetEntries` — an explicit `page`/`pageSize` is
+  // forwarded to the backend, and the response echoes back the resolved
+  // pagination metadata alongside the existing summary/entries fields.
+  it("forwards an explicit page/pageSize and returns pagination metadata", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(projectAdminToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          TotalHours: 40,
+          ApprovedHours: 20,
+          PendingHours: 20,
+          ProjectSummaries: [],
+          TotalCount: 25,
+          TotalPages: 3,
+          PageNo: 2,
+          PageSize: 10,
+          Items: [
+            {
+              Id: "5a24c616-eba8-4c6f-b4dd-1928a896d792",
+              UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
+              ProjectId: PROJECT_ID,
+              TimesheetPeriodId: "be79b007-2525-404d-9946-b49efca89872",
+              EntryDate: "2026-03-07",
+              Hours: 20,
+              TaskDescription: "Worked on feature implementation",
+              IsApproved: true,
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await GET(getRequest(`?projectId=${PROJECT_ID}&page=2&pageSize=10`));
+    const body = await response.json();
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/TimesheetEntry/GetProjectAdminTimesheetSummary",
+      expect.objectContaining({ params: { projectId: PROJECT_ID, page: 2, pageSize: 10 } })
+    );
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual(
+      expect.objectContaining({
+        totalCount: 25,
+        totalPages: 3,
+        page: 2,
+        pageSize: 10,
+        entries: [expect.objectContaining({ id: "5a24c616-eba8-4c6f-b4dd-1928a896d792" })],
       })
     );
   });

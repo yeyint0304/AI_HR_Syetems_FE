@@ -5,6 +5,7 @@ import {
   mapBackendProjectAdminTimesheetSummary,
   mapBackendTimesheetEntry,
   mapBackendTimesheetEntryList,
+  mapBackendTimesheetEntryPage,
 } from "@/lib/server/timesheetEntryResponseMappers";
 
 describe("timesheetEntryResponseMappers", () => {
@@ -106,33 +107,37 @@ describe("timesheetEntryResponseMappers", () => {
 
   describe("mapBackendProjectAdminTimesheetSummary", () => {
     it("maps the saved 'Get Project Admin Timesheet Entry' example", () => {
-      const result = mapBackendProjectAdminTimesheetSummary({
-        TotalHours: 40,
-        ApprovedHours: 20,
-        PendingHours: 20,
-        ProjectSummaries: [
-          {
-            ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
-            ProjectCode: "D3SG001",
-            ProjectName: "Straight Through Processing Enhancement Phase 1",
-            TotalHours: 40,
-            ApprovedHours: 20,
-            PendingHours: 20,
-          },
-        ],
-        Entries: [
-          {
-            Id: "5a24c616-eba8-4c6f-b4dd-1928a896d792",
-            UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
-            ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
-            TimesheetPeriodId: "be79b007-2525-404d-9946-b49efca89872",
-            EntryDate: "2026-03-07",
-            Hours: 20,
-            TaskDescription: "Worked on feature implementation",
-            IsApproved: true,
-          },
-        ],
-      });
+      const result = mapBackendProjectAdminTimesheetSummary(
+        {
+          TotalHours: 40,
+          ApprovedHours: 20,
+          PendingHours: 20,
+          ProjectSummaries: [
+            {
+              ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+              ProjectCode: "D3SG001",
+              ProjectName: "Straight Through Processing Enhancement Phase 1",
+              TotalHours: 40,
+              ApprovedHours: 20,
+              PendingHours: 20,
+            },
+          ],
+          Entries: [
+            {
+              Id: "5a24c616-eba8-4c6f-b4dd-1928a896d792",
+              UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
+              ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+              TimesheetPeriodId: "be79b007-2525-404d-9946-b49efca89872",
+              EntryDate: "2026-03-07",
+              Hours: 20,
+              TaskDescription: "Worked on feature implementation",
+              IsApproved: true,
+            },
+          ],
+        },
+        1,
+        20
+      );
 
       expect(result).toEqual({
         totalHours: 40,
@@ -149,34 +154,137 @@ describe("timesheetEntryResponseMappers", () => {
           }),
         ],
         entries: [expect.objectContaining({ id: "5a24c616-eba8-4c6f-b4dd-1928a896d792", hours: 20 })],
+        totalCount: 1,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
       });
     });
 
-    it("defaults ProjectSummaries/Entries to empty arrays when absent", () => {
-      expect(mapBackendProjectAdminTimesheetSummary({ TotalHours: 0, ApprovedHours: 0, PendingHours: 0 })).toEqual({
+    // Per `feature/timesheets-pagination`: the live backend's saved example
+    // nests the entry list under `Items` (sibling to
+    // `TotalCount`/`TotalPages`/`PageNo`/`PageSize`) rather than `Entries` —
+    // see `mapBackendProjectAdminTimesheetSummary`'s doc comment.
+    it("maps the entry list from Items (the live backend's actual field name) and its pagination metadata", () => {
+      const result = mapBackendProjectAdminTimesheetSummary(
+        {
+          TotalHours: 41,
+          ApprovedHours: 20,
+          PendingHours: 21,
+          ProjectSummaries: [],
+          TotalCount: 2,
+          TotalPages: 1,
+          PageNo: 1,
+          PageSize: 20,
+          Items: [
+            {
+              Id: "5a24c616-eba8-4c6f-b4dd-1928a896d792",
+              UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
+              ProjectId: "17342891-4f2f-433b-a814-03f64b4f0df3",
+              TimesheetPeriodId: "be79b007-2525-404d-9946-b49efca89872",
+              EntryDate: "2026-03-07",
+              Hours: 20,
+              TaskDescription: "Worked on feature implementation",
+              IsApproved: true,
+            },
+          ],
+        },
+        1,
+        20
+      );
+
+      expect(result?.entries).toEqual([
+        expect.objectContaining({ id: "5a24c616-eba8-4c6f-b4dd-1928a896d792", hours: 20 }),
+      ]);
+      expect(result).toEqual(
+        expect.objectContaining({ totalCount: 2, totalPages: 1, page: 1, pageSize: 20 })
+      );
+    });
+
+    it("defaults ProjectSummaries/Entries to empty arrays when absent, and back-fills pagination from the requested page/pageSize", () => {
+      expect(
+        mapBackendProjectAdminTimesheetSummary({ TotalHours: 0, ApprovedHours: 0, PendingHours: 0 }, 1, 20)
+      ).toEqual({
         totalHours: 0,
         approvedHours: 0,
         pendingHours: 0,
         projectSummaries: [],
         entries: [],
+        totalCount: 0,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
       });
     });
 
     it("filters out malformed project summaries/entries missing required ids", () => {
-      const result = mapBackendProjectAdminTimesheetSummary({
-        TotalHours: 0,
-        ApprovedHours: 0,
-        PendingHours: 0,
-        ProjectSummaries: [{ TotalHours: 5 }],
-        Entries: [{ Id: "1" }],
-      });
+      const result = mapBackendProjectAdminTimesheetSummary(
+        {
+          TotalHours: 0,
+          ApprovedHours: 0,
+          PendingHours: 0,
+          ProjectSummaries: [{ TotalHours: 5 }],
+          Entries: [{ Id: "1" }],
+        },
+        1,
+        20
+      );
       expect(result?.projectSummaries).toEqual([]);
       expect(result?.entries).toEqual([]);
     });
 
     it("returns null for a non-object", () => {
-      expect(mapBackendProjectAdminTimesheetSummary(null)).toBeNull();
-      expect(mapBackendProjectAdminTimesheetSummary("not-an-object")).toBeNull();
+      expect(mapBackendProjectAdminTimesheetSummary(null, 1, 20)).toBeNull();
+      expect(mapBackendProjectAdminTimesheetSummary("not-an-object", 1, 20)).toBeNull();
+    });
+  });
+
+  describe("mapBackendTimesheetEntryPage", () => {
+    const BASE_ENTRY = {
+      Id: "b365fa4d-6a30-4c5b-ae33-6161d9f81328",
+      UserId: "f7c326c1-00b9-4aee-90c3-0000d06b37cc",
+      ProjectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+      TimesheetPeriodId: "31a3ee86-f58c-4434-9f00-7b39493b59e8",
+      EntryDate: "2025-03-01",
+      Hours: 10,
+      TaskDescription: "Worked on feature implementation",
+      IsApproved: true,
+    };
+
+    it("maps the saved 'Get All Timesheet Entries' example's pagination envelope", () => {
+      const result = mapBackendTimesheetEntryPage(
+        { TotalCount: 7, TotalPages: 1, PageNo: 1, PageSize: 20, Items: [BASE_ENTRY] },
+        1,
+        20
+      );
+
+      expect(result).toEqual({
+        items: [expect.objectContaining({ id: BASE_ENTRY.Id, hours: 10 })],
+        totalCount: 7,
+        totalPages: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    });
+
+    it("back-fills page/pageSize/totalPages from the requested values when the backend omits them", () => {
+      const result = mapBackendTimesheetEntryPage([BASE_ENTRY], 2, 20);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.page).toBe(2);
+      expect(result.pageSize).toBe(20);
+      expect(result.totalCount).toBe(1);
+      expect(result.totalPages).toBe(1);
+    });
+
+    it("returns an empty page for an unrecognized shape", () => {
+      expect(mapBackendTimesheetEntryPage(null, 1, 20)).toEqual({
+        items: [],
+        totalCount: 0,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+      });
     });
   });
 });

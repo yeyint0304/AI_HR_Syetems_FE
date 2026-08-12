@@ -56,3 +56,19 @@ export const DEFAULT_DAILY_HOURS_WARNING_THRESHOLD = 8;
 export const MIN_ENTRY_HOURS = 0.25;
 export const MAX_ENTRY_HOURS = 24;
 export const ENTRY_HOURS_STEP = 0.25;
+
+/**
+ * Server-side page size for `/timesheets/history`'s entries table, per the
+ * `feature/timesheets-pagination` request. Both `TimesheetEntry/GetAllTimesheetEntries`
+ * and `TimesheetEntry/GetProjectAdminTimesheetSummary` already return a
+ * paginated envelope (`TotalCount`/`TotalPages`/`PageNo`/`PageSize`, see
+ * `docs/HR_System_BE.postman_collection.json`) — this app previously never
+ * sent an explicit `page`/`pageSize`, silently relying on the backend's own
+ * default (`PageSize: 20` in the saved example) and treating whatever came
+ * back as "the complete history", which quietly dropped every entry beyond
+ * the first page once a user/project had more than that. `20` mirrors that
+ * same backend default and `DEFAULT_INVOICE_PAGE_SIZE`
+ * (`lib/constants/invoice.constants.ts`), the other server-paginated list in
+ * this app.
+ */
+export const DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE = 20;

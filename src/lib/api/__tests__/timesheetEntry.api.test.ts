@@ -5,6 +5,7 @@ import {
   deleteTimesheetEntryRequest,
   getProjectAdminTimesheetSummaryRequest,
   getTimesheetEntryListRequest,
+  getTimesheetEntryPageRequest,
   getTimesheetEntryRequest,
   rejectTimesheetEntryRequest,
   updateTimesheetEntryRequest,
@@ -46,6 +47,26 @@ describe("timesheetEntry.api", () => {
 
     expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries", {
       params: { userId: "user-1", timesheetPeriodId: "period-1" },
+    });
+  });
+
+  // `feature/timesheets-pagination`
+  it("getTimesheetEntryPageRequest fetches a page and normalizes the pagination metadata", async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { data: [TIMESHEET_ENTRY], totalCount: 7, page: 1, pageSize: 20, totalPages: 1 },
+    });
+
+    const result = await getTimesheetEntryPageRequest({ userId: "user-1", page: 1, pageSize: 20 });
+
+    expect(apiClient.get).toHaveBeenCalledWith("/timesheet-entries", {
+      params: { userId: "user-1", page: 1, pageSize: 20 },
+    });
+    expect(result).toEqual({
+      items: [TIMESHEET_ENTRY],
+      totalCount: 7,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
     });
   });
 

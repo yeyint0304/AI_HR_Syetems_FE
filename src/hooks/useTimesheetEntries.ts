@@ -7,6 +7,7 @@ import {
   deleteTimesheetEntryRequest,
   getProjectAdminTimesheetSummaryRequest,
   getTimesheetEntryListRequest,
+  getTimesheetEntryPageRequest,
   getTimesheetEntryRequest,
   getTimesheetEntryUserRolesRequest,
   rejectTimesheetEntryRequest,
@@ -37,6 +38,28 @@ export function useTimesheetEntryList(
   return useQuery({
     queryKey: timesheetEntryListQueryKey(filters),
     queryFn: () => getTimesheetEntryListRequest(filters),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * Server-paginated counterpart to `useTimesheetEntryList`, per the
+ * `feature/timesheets-pagination` request. Used only by
+ * `TimesheetHistoryView`'s `SystemAdmin`/plain-`Employee` branch — see
+ * `getTimesheetEntryPageRequest`'s doc comment for why this is a separate
+ * function/hook rather than changing `useTimesheetEntryList`'s return shape.
+ * Keyed under the same `"timesheet-entries"` prefix so
+ * `useApproveTimesheetEntry`/`useRejectTimesheetEntry`/`useUpdateTimesheetEntry`'s
+ * shared `invalidateQueries({ queryKey: TIMESHEET_ENTRIES_QUERY_KEY })` also
+ * refetches this page after a mutation, exactly like every other query below.
+ */
+export function useTimesheetEntryPage(
+  filters?: TimesheetEntryListFilters,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: [...timesheetEntryListQueryKey(filters), "page"] as const,
+    queryFn: () => getTimesheetEntryPageRequest(filters),
     enabled: options?.enabled ?? true,
   });
 }
