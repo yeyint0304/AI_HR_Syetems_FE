@@ -499,6 +499,41 @@ describe("TimesheetHistoryView", () => {
         )
       );
     });
+
+    it("does not render pagination controls when there is only a single page", async () => {
+      mockApi({ entries: [PENDING_ENTRY], totalCount: 1 });
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("button", { name: /^next$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^previous$/i })).not.toBeInTheDocument();
+    });
+
+    it("shows an error state with a Try again action when the paginated entries request fails, and recovers on retry", async () => {
+      let callCount = 0;
+      (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+        if (url === "/timesheet-periods") return Promise.resolve({ data: { data: [PERIOD] } });
+        if (url === "/projects" || url === "/projects/my") return Promise.resolve({ data: { data: [PROJECT] } });
+        if (url === "/timesheet-entries") {
+          callCount += 1;
+          if (callCount === 1) return Promise.reject(new Error("Network error"));
+          return Promise.resolve({
+            data: { data: [PENDING_ENTRY], totalCount: 1, page: 1, pageSize: 20, totalPages: 1 },
+          });
+        }
+        return Promise.reject(new Error(`Unexpected GET ${url}`));
+      });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      expect(await screen.findByText(/unable to load your timesheet entries/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /try again/i }));
+
+      expect(await screen.findByRole("table")).toBeInTheDocument();
+      expect(screen.queryByText(/unable to load your timesheet entries/i)).not.toBeInTheDocument();
+    });
   });
 
   it("does not show a Generate Invoice link for a plain User", async () => {
@@ -857,6 +892,27 @@ describe("TimesheetHistoryView", () => {
         expect(apiClient.get).toHaveBeenCalledWith(
           "/timesheet-entries/project-admin-summary",
           expect.objectContaining({ params: expect.objectContaining({ projectId: PROJECT_ID }) })
+        )
+      );
+    });
+
+    // `feature/timesheets-pagination`: the ProjectAdmin branch (backed by
+    // `GetProjectAdminTimesheetSummary`) drives the same shared
+    // `<TablePagination>` control off its own response's `totalPages`, not
+    // just the SystemAdmin/Employee `GetAllTimesheetEntries` branch covered
+    // above.
+    it("requests page 2 from the project-admin-summary endpoint after clicking Next", async () => {
+      mockApi({ entries: [PENDING_ENTRY], totalCount: 25 });
+      const user = userEvent.setup();
+      renderWithClient(<TimesheetHistoryView currentUserId={CURRENT_USER_ID} />);
+
+      const nextButton = await screen.findByRole("button", { name: /^next$/i });
+      await user.click(nextButton);
+
+      await waitFor(() =>
+        expect(apiClient.get).toHaveBeenCalledWith(
+          "/timesheet-entries/project-admin-summary",
+          expect.objectContaining({ params: expect.objectContaining({ page: 2, pageSize: 20 }) })
         )
       );
     });
