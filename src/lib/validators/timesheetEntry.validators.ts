@@ -65,6 +65,11 @@ export const timesheetEntryListQuerySchema = z.object({
   projectId: guidSchema("Enter a valid project ID.").optional(),
   timesheetPeriodId: guidSchema("Enter a valid timesheet period ID.").optional(),
   isApproved: z.enum(["true", "false"]).optional(),
+  // Server-side pagination for `feature/timesheets-pagination` — see
+  // `types/timesheetEntry.types.ts#TimesheetEntryListFilters`. Bounds mirror
+  // `lib/validators/invoice.validators.ts`'s own `page`/`pageSize` fields.
+  page: z.coerce.number("page must be a number.").int().min(1).optional(),
+  pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(200).optional(),
 });
 export type TimesheetEntryListQuery = z.infer<typeof timesheetEntryListQuerySchema>;
 
@@ -77,6 +82,10 @@ export type TimesheetEntryListQuery = z.infer<typeof timesheetEntryListQuerySche
  */
 export const projectAdminTimesheetSummaryQuerySchema = z.object({
   projectId: guidSchema("Enter a valid project ID.").optional(),
+  // Mirrors `timesheetEntryListQuerySchema`'s own `page`/`pageSize` fields —
+  // see that schema's doc comment.
+  page: z.coerce.number("page must be a number.").int().min(1).optional(),
+  pageSize: z.coerce.number("pageSize must be a number.").int().min(1).max(200).optional(),
 });
 export type ProjectAdminTimesheetSummaryQuery = z.infer<
   typeof projectAdminTimesheetSummaryQuerySchema

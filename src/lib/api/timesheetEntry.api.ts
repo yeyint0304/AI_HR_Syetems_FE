@@ -5,6 +5,7 @@ import type {
   ProjectAdminTimesheetSummaryFilters,
   TimesheetEntry,
   TimesheetEntryListFilters,
+  TimesheetEntryPage,
   TimesheetEntryUserRole,
   UpdateTimesheetEntryRequest,
 } from "@/types/timesheetEntry.types";
@@ -24,6 +25,43 @@ export async function getTimesheetEntryListRequest(
     params: filters,
   });
   return data.data;
+}
+
+/**
+ * Paginated counterpart to `getTimesheetEntryListRequest` above, per the
+ * `feature/timesheets-pagination` request — backs `TimesheetHistoryView`'s
+ * server-side pagination for the `SystemAdmin`/plain-`Employee` branch
+ * (mirroring `getInvoiceListRequest`, `lib/api/invoice.api.ts`, for the
+ * equivalent server-paginated `/invoices` list).
+ *
+ * Deliberately kept separate from `getTimesheetEntryListRequest` rather than
+ * changing that function's return shape: `MyTimesheetView` and
+ * `InvoiceGenerateForm` also call `useTimesheetEntryList`/that function to
+ * fetch an unpaginated, in-memory list (a signed-in user's single week, or a
+ * project's approved entries) and have no use for pagination metadata — this
+ * keeps their existing contract untouched. `GET /api/timesheet-entries`
+ * already echoes `totalCount`/`page`/`pageSize`/`totalPages` back alongside
+ * its unchanged `data` array (see that Route Handler's doc comment), so both
+ * functions can safely share the one endpoint.
+ */
+export async function getTimesheetEntryPageRequest(
+  filters?: TimesheetEntryListFilters
+): Promise<TimesheetEntryPage> {
+  const { data } = await apiClient.get<{
+    data: TimesheetEntry[];
+    totalCount: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }>("/timesheet-entries", { params: filters });
+
+  return {
+    items: data.data,
+    totalCount: data.totalCount,
+    page: data.page,
+    pageSize: data.pageSize,
+    totalPages: data.totalPages,
+  };
 }
 
 export async function getTimesheetEntryRequest(id: string): Promise<TimesheetEntry> {

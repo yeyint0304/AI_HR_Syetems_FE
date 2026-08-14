@@ -58,12 +58,37 @@ export interface UpdateTimesheetEntryRequest {
   taskDescription: string;
 }
 
-/** Optional filters for `TimesheetEntry/GetAllTimesheetEntries` (all query params are optional). */
+/**
+ * Optional filters for `TimesheetEntry/GetAllTimesheetEntries` (all query
+ * params are optional). `page`/`pageSize` are not documented on the request
+ * side of the saved Postman example, but the endpoint's response already
+ * echoes back `PageNo`/`PageSize` (see `TimesheetEntryPage` below) — they are
+ * forwarded optimistically, same as every other paginated `GetAll*` endpoint
+ * in this backend (see `app/api/timesheet-entries/route.ts`).
+ */
 export interface TimesheetEntryListFilters {
   userId?: string;
   projectId?: string;
   timesheetPeriodId?: string;
   isApproved?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * A single page of `TimesheetEntry/GetAllTimesheetEntries`'s results, per the
+ * `feature/timesheets-pagination` request — backs the "Timesheet History"
+ * table's (`components/timesheets/TimesheetHistoryView.tsx`) server-side
+ * pagination for the `SystemAdmin`/plain-`Employee` branch, mirroring
+ * `InvoiceList` (`types/invoice.types.ts`) for the equivalent server-paginated
+ * `/invoices` list.
+ */
+export interface TimesheetEntryPage {
+  items: TimesheetEntry[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /**
@@ -85,6 +110,13 @@ export interface TimesheetProjectSummary {
  * a `ProjectAdmin`-facing summary/entry-list endpoint, distinct from the
  * org-wide `TimesheetEntry/GetAllTimesheetEntries` a `SystemAdmin` uses (see
  * `components/timesheets/TimesheetHistoryView.tsx`).
+ *
+ * `totalCount`/`page`/`pageSize`/`totalPages` describe `entries` — the saved
+ * example's `Data` object nests `TotalCount`/`TotalPages`/`PageNo`/`PageSize`
+ * alongside `Items` (renamed `entries` here) at the same level as
+ * `TotalHours`/`ProjectSummaries`, i.e. this endpoint is *also* a paginated
+ * entry list, not just a rollup — added per `feature/timesheets-pagination`
+ * so a `ProjectAdmin`'s "Timesheet History" table paginates server-side too.
  */
 export interface ProjectAdminTimesheetSummary {
   totalHours: number;
@@ -92,6 +124,10 @@ export interface ProjectAdminTimesheetSummary {
   pendingHours: number;
   projectSummaries: TimesheetProjectSummary[];
   entries: TimesheetEntry[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /**
@@ -100,10 +136,13 @@ export interface ProjectAdminTimesheetSummary {
  * always supplies `projectId`, but it's treated as optional here, consistent
  * with every other Timesheet Entry list filter (`TimesheetEntryListFilters`)
  * and this screen's existing "All Projects" filter option — omitting it is
- * read as "every project this Project Admin manages".
+ * read as "every project this Project Admin manages". `page`/`pageSize` are
+ * forwarded optimistically, same rationale as `TimesheetEntryListFilters`.
  */
 export interface ProjectAdminTimesheetSummaryFilters {
   projectId?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 /**

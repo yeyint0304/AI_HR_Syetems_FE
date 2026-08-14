@@ -165,6 +165,79 @@ describe("GET /api/timesheet-entries", () => {
     ]);
   });
 
+  // `feature/timesheets-pagination`: `GetAllTimesheetEntries` already returns
+  // a paginated envelope by default (`TotalCount`/`TotalPages`/`PageNo`/
+  // `PageSize`) — this Route Handler now forwards an explicit `page`/
+  // `pageSize` (defaulting to 1/20 when omitted) and echoes the resolved
+  // pagination metadata back alongside the unchanged `data` array.
+  it("defaults page/pageSize to 1/20 and forwards them to the backend", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: { StatusCode: 200, IsSuccess: true, Message: "Success", Data: { Items: [] } },
+    });
+
+    await GET(getRequest());
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/TimesheetEntry/GetAllTimesheetEntries",
+      expect.objectContaining({ params: expect.objectContaining({ page: 1, pageSize: 20 }) })
+    );
+  });
+
+  it("forwards an explicit page/pageSize and returns pagination metadata alongside data", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
+    (backendApiClient.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        StatusCode: 200,
+        IsSuccess: true,
+        Message: "Success",
+        Data: {
+          TotalCount: 45,
+          TotalPages: 3,
+          PageNo: 2,
+          PageSize: 20,
+          Items: [
+            {
+              Id: "b365fa4d-6a30-4c5b-ae33-6161d9f81328",
+              UserId: selfUserId,
+              ProjectId: "6f2594d9-224a-414a-a409-30dc98f9a1be",
+              TimesheetPeriodId: "31a3ee86-f58c-4434-9f00-7b39493b59e8",
+              EntryDate: "2025-03-01",
+              Hours: 10,
+              TaskDescription: "Worked on feature implementation",
+              IsApproved: true,
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await GET(getRequest("?page=2&pageSize=20"));
+    const body = await response.json();
+
+    expect(backendApiClient.get).toHaveBeenCalledWith(
+      "/TimesheetEntry/GetAllTimesheetEntries",
+      expect.objectContaining({ params: expect.objectContaining({ page: 2, pageSize: 20 }) })
+    );
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual([
+      expect.objectContaining({ id: "b365fa4d-6a30-4c5b-ae33-6161d9f81328" }),
+    ]);
+    expect(body.totalCount).toBe(45);
+    expect(body.totalPages).toBe(3);
+    expect(body.page).toBe(2);
+    expect(body.pageSize).toBe(20);
+  });
+
+  it("400s on an invalid pageSize without calling the backend", async () => {
+    (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
+
+    const response = await GET(getRequest("?pageSize=0"));
+
+    expect(response.status).toBe(400);
+    expect(backendApiClient.get).not.toHaveBeenCalled();
+  });
+
   it("forwards the backend's message for an expected 4xx logical failure", async () => {
     (getAccessToken as jest.Mock).mockResolvedValueOnce(userToken);
     (backendApiClient.get as jest.Mock).mockResolvedValueOnce({

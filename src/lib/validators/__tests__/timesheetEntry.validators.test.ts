@@ -118,6 +118,19 @@ describe("timesheetEntry.validators", () => {
     it("rejects an invalid isApproved value", () => {
       expect(timesheetEntryListQuerySchema.safeParse({ isApproved: "yes" }).success).toBe(false);
     });
+
+    // `feature/timesheets-pagination`
+    it("accepts valid page/pageSize values", () => {
+      expect(timesheetEntryListQuerySchema.safeParse({ page: "2", pageSize: "20" }).success).toBe(true);
+    });
+
+    it("rejects a page below 1", () => {
+      expect(timesheetEntryListQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+    });
+
+    it("rejects a pageSize above 200", () => {
+      expect(timesheetEntryListQuerySchema.safeParse({ pageSize: "201" }).success).toBe(false);
+    });
   });
 
   describe("projectAdminTimesheetSummaryQuerySchema", () => {
@@ -135,6 +148,13 @@ describe("timesheetEntry.validators", () => {
 
     it("rejects a non-uuid projectId", () => {
       expect(projectAdminTimesheetSummaryQuerySchema.safeParse({ projectId: "nope" }).success).toBe(false);
+    });
+
+    // `feature/timesheets-pagination`
+    it("accepts valid page/pageSize values", () => {
+      expect(
+        projectAdminTimesheetSummaryQuerySchema.safeParse({ page: "1", pageSize: "20" }).success
+      ).toBe(true);
     });
   });
 });

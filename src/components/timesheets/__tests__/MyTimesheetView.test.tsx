@@ -561,6 +561,41 @@ describe("MyTimesheetView", () => {
     expect(screen.queryByText(/timesheet saved successfully/i)).not.toBeInTheDocument();
   });
 
+  // Regression test for `comparePeriodStartDescending`: the previous
+  // comparator (`(a, b) => (a.periodStart < b.periodStart ? 1 : -1)`) never
+  // returned `0` for two periods sharing the same `periodStart`, violating
+  // `Array.prototype.sort`'s comparator contract and making the default
+  // period picked by `resolveDefaultPeriod` engine-dependent. Neither period
+  // here covers "today" (2025-01-06), so `resolveDefaultPeriod` must fall
+  // through to the sort — asserting the *locked* period (listed first in the
+  // `periods` fixture) is deterministically the one auto-selected pins that
+  // fallback to a stable, order-preserving result across repeated runs.
+  it("deterministically defaults to the first of two periods sharing the same periodStart", async () => {
+    const TIED_PERIOD_A_ID = "3fa85f64-5717-4562-b3fc-2c963f66af21";
+    const TIED_PERIOD_B_ID = "3fa85f64-5717-4562-b3fc-2c963f66af22";
+    const TIED_PERIOD_A = {
+      ...PERIOD,
+      id: TIED_PERIOD_A_ID,
+      periodStart: "2025-03-01",
+      periodEnd: "2025-03-31",
+      isLocked: true,
+      lockedAt: "2025-03-01T00:00:00Z",
+    };
+    const TIED_PERIOD_B = {
+      ...PERIOD,
+      id: TIED_PERIOD_B_ID,
+      periodStart: "2025-03-01",
+      periodEnd: "2025-03-31",
+      isLocked: false,
+    };
+    mockApi({ periods: [TIED_PERIOD_A, TIED_PERIOD_B], entries: [] });
+    renderWithClient(<MyTimesheetView currentUserId={CURRENT_USER_ID} />);
+
+    const periodSelect = (await screen.findByLabelText(/timesheet period/i)) as HTMLSelectElement;
+    expect(periodSelect).toHaveValue(TIED_PERIOD_A_ID);
+    expect(await screen.findByText(/this timesheet period is locked/i)).toBeInTheDocument();
+  });
+
   it("blocks Save All and shows a field error when hours are entered without a task description", async () => {
     mockApi({ entries: [] });
     const user = userEvent.setup();

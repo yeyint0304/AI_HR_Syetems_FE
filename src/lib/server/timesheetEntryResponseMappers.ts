@@ -2,6 +2,7 @@ import "server-only";
 import type {
   ProjectAdminTimesheetSummary,
   TimesheetEntry,
+  TimesheetEntryPage,
   TimesheetProjectSummary,
 } from "@/types/timesheetEntry.types";
 import { readBackendEnvelope, resolveEnvelopeFailure } from "@/lib/server/backendEnvelope";
@@ -113,6 +114,52 @@ export function mapBackendTimesheetEntryList(raw: unknown): TimesheetEntry[] {
     .filter((entry): entry is TimesheetEntry => entry !== null);
 }
 
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+interface RawTimesheetEntryPageMeta {
+  TotalCount?: number;
+  totalCount?: number;
+  TotalPages?: number;
+  totalPages?: number;
+  PageNo?: number;
+  pageNo?: number;
+  Page?: number;
+  page?: number;
+  PageSize?: number;
+  pageSize?: number;
+}
+
+/**
+ * Maps `TimesheetEntry/GetAllTimesheetEntries`'s `Data` object (already
+ * unwrapped from the envelope) into a `TimesheetEntryPage` — the `Items`
+ * array (via `mapBackendTimesheetEntryList`) plus pagination metadata
+ * (`TotalCount`/`TotalPages`/`PageNo`/`PageSize`, per the saved example in
+ * `docs/HR_System_BE.postman_collection.json`). `requestedPage`/
+ * `requestedPageSize` back-fill the metadata whenever the backend omits it,
+ * mirroring `lib/server/authResponseMappers.ts#mapBackendUnassignedUserPage`.
+ * Added for `feature/timesheets-pagination` — see
+ * `app/api/timesheet-entries/route.ts`.
+ */
+export function mapBackendTimesheetEntryPage(
+  raw: unknown,
+  requestedPage: number,
+  requestedPageSize: number
+): TimesheetEntryPage {
+  const items = mapBackendTimesheetEntryList(raw);
+  const r = (typeof raw === "object" && raw !== null ? raw : {}) as RawTimesheetEntryPageMeta;
+  const page = asFiniteNumber(r.PageNo ?? r.pageNo ?? r.Page ?? r.page, requestedPage);
+  const pageSize = asFiniteNumber(r.PageSize ?? r.pageSize, requestedPageSize);
+  const totalCount = asFiniteNumber(r.TotalCount ?? r.totalCount, items.length);
+  const totalPages = asFiniteNumber(
+    r.TotalPages ?? r.totalPages,
+    Math.max(1, Math.ceil(totalCount / (pageSize || requestedPageSize || 1)))
+  );
+
+  return { items, totalCount, page, pageSize, totalPages };
+}
+
 interface RawTimesheetProjectSummary {
   ProjectId?: string;
   projectId?: string;
@@ -155,6 +202,18 @@ interface RawProjectAdminTimesheetSummary {
   projectSummaries?: unknown[];
   Entries?: unknown[];
   entries?: unknown[];
+  Items?: unknown[];
+  items?: unknown[];
+  TotalCount?: number;
+  totalCount?: number;
+  TotalPages?: number;
+  totalPages?: number;
+  PageNo?: number;
+  pageNo?: number;
+  Page?: number;
+  page?: number;
+  PageSize?: number;
+  pageSize?: number;
 }
 
 /**
@@ -163,9 +222,22 @@ interface RawProjectAdminTimesheetSummary {
  * `mapBackendTimesheetEntryList`, `raw` here is a single object (not an
  * array), with `ProjectSummaries`/`Entries` array fields nested inside it,
  * per the saved example in `docs/HR_System_BE.postman_collection.json`.
+ *
+ * The saved example's entry list actually comes back under `Items` (sibling
+ * to `TotalCount`/`TotalPages`/`PageNo`/`PageSize`, the same paginated-list
+ * shape `GetAllTimesheetEntries` uses) rather than `Entries` — both keys are
+ * checked (`Entries` first, for any deployment that does return it) so
+ * neither shape silently maps to an empty list. `requestedPage`/
+ * `requestedPageSize` back-fill the pagination metadata when the backend
+ * response omits it, mirroring `mapBackendTimesheetEntryPage` above — added
+ * for `feature/timesheets-pagination` so a `ProjectAdmin`'s "Timesheet
+ * History" table paginates server-side too (see
+ * `app/api/timesheet-entries/project-admin-summary/route.ts`).
  */
 export function mapBackendProjectAdminTimesheetSummary(
-  raw: unknown
+  raw: unknown,
+  requestedPage: number,
+  requestedPageSize: number
 ): ProjectAdminTimesheetSummary | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as RawProjectAdminTimesheetSummary;
@@ -174,9 +246,17 @@ export function mapBackendProjectAdminTimesheetSummary(
     .map(mapBackendProjectSummary)
     .filter((summary): summary is TimesheetProjectSummary => summary !== null);
 
-  const entries = (r.Entries ?? r.entries ?? [])
+  const entries = (r.Entries ?? r.entries ?? r.Items ?? r.items ?? [])
     .map(mapBackendTimesheetEntry)
     .filter((entry): entry is TimesheetEntry => entry !== null);
+
+  const page = asFiniteNumber(r.PageNo ?? r.pageNo ?? r.Page ?? r.page, requestedPage);
+  const pageSize = asFiniteNumber(r.PageSize ?? r.pageSize, requestedPageSize);
+  const totalCount = asFiniteNumber(r.TotalCount ?? r.totalCount, entries.length);
+  const totalPages = asFiniteNumber(
+    r.TotalPages ?? r.totalPages,
+    Math.max(1, Math.ceil(totalCount / (pageSize || requestedPageSize || 1)))
+  );
 
   return {
     totalHours: r.TotalHours ?? r.totalHours ?? 0,
@@ -184,5 +264,9 @@ export function mapBackendProjectAdminTimesheetSummary(
     pendingHours: r.PendingHours ?? r.pendingHours ?? 0,
     projectSummaries,
     entries,
+    totalCount,
+    page,
+    pageSize,
+    totalPages,
   };
 }

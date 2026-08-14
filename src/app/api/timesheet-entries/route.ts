@@ -5,7 +5,7 @@ import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
 import { toBackendCreateTimesheetEntryPayload } from "@/lib/server/backendPayloadMappers";
 import {
   mapBackendTimesheetEntry,
-  mapBackendTimesheetEntryList,
+  mapBackendTimesheetEntryPage,
   readBackendEnvelope,
   resolveEnvelopeFailure,
 } from "@/lib/server/timesheetEntryResponseMappers";
@@ -14,7 +14,10 @@ import {
   timesheetEntryListQuerySchema,
 } from "@/lib/validators/timesheetEntry.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.constants";
+import {
+  canManageAnyTimesheetEntry,
+  DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE,
+} from "@/lib/constants/timesheetEntry.constants";
 
 /**
  * GET /api/timesheet-entries
@@ -28,6 +31,23 @@ import { canManageAnyTimesheetEntry } from "@/lib/constants/timesheetEntry.const
  *     filter they supply is ignored/overridden with their own id.
  *   - SystemAdmin/ProjectAdmin may query any user's entries (or omit the
  *     filter entirely to see everyone's), matching `canManageAnyTimesheetEntry`.
+ *
+ * `page`/`pageSize` handling, per `feature/timesheets-pagination`: neither is
+ * documented on `GetAllTimesheetEntries`'s request side (unlike e.g.
+ * `Country/GetAllCountries`'s explicit `?page=&pageSize=`) — yet its saved
+ * response example already comes back as a paginated envelope by default
+ * (`Data: { TotalCount, TotalPages, PageNo, PageSize, Items }`, capped at
+ * `PageSize: 20`). Previously this Route Handler never sent either param and
+ * simply returned whatever page the backend defaulted to as "the complete
+ * list" — silently dropping every entry past the first 20 for any user or
+ * project with more history than that, with no way for "Timesheet History"
+ * to reach the rest. `page`/`pageSize` are now forwarded (same "optimistic,
+ * harmless no-op if ignored" convention as `app/api/auth/unassigned-users/route.ts`),
+ * and the response echoes back `totalCount`/`page`/`pageSize`/`totalPages`
+ * alongside the existing `data` array (still the plain `TimesheetEntry[]`,
+ * unchanged, so `MyTimesheetView`/`InvoiceGenerateForm` — which only ever
+ * read `data` and don't need pagination — keep working exactly as before)
+ * so `TimesheetHistoryView` can drive real Previous/Next paging.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -53,6 +73,8 @@ export async function GET(request: Request) {
     projectId: searchParams.get("projectId") ?? undefined,
     timesheetPeriodId: searchParams.get("timesheetPeriodId") ?? undefined,
     isApproved: searchParams.get("isApproved") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsedQuery.success) {
@@ -75,10 +97,12 @@ export async function GET(request: Request) {
   // Self-scope by default for non-privileged roles so a plain `User` can never
   // enumerate every employee's timesheet entries by simply omitting the filter.
   const effectiveUserId = requestedUserId ?? (canManageAny ? undefined : currentUser.id);
+  const page = parsedQuery.data.page ?? 1;
+  const pageSize = parsedQuery.data.pageSize ?? DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE;
 
   try {
     const response = await backendApiClient.get("/TimesheetEntry/GetAllTimesheetEntries", {
-      params: { ...parsedQuery.data, userId: effectiveUserId },
+      params: { ...parsedQuery.data, userId: effectiveUserId, page, pageSize },
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -92,8 +116,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ message }, { status });
     }
 
+    const { items, totalCount, page: resolvedPage, pageSize: resolvedPageSize, totalPages } =
+      mapBackendTimesheetEntryPage(envelope.data, page, pageSize);
+
     return NextResponse.json(
-      { data: mapBackendTimesheetEntryList(envelope.data) },
+      { data: items, totalCount, page: resolvedPage, pageSize: resolvedPageSize, totalPages },
       { status: 200 }
     );
   } catch (error) {

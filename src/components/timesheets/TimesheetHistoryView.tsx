@@ -11,13 +11,12 @@ import { TextField } from "@/components/ui/TextField";
 import { TablePagination } from "@/components/ui/TablePagination";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectAssignmentsForProjects, useProjectSelectOptions } from "@/hooks/useProjects";
-import { useTablePagination } from "@/hooks/useTablePagination";
 import { useTimesheetPeriodList } from "@/hooks/useTimesheetPeriods";
 import {
   useApproveTimesheetEntry,
   useProjectAdminTimesheetSummary,
   useRejectTimesheetEntry,
-  useTimesheetEntryList,
+  useTimesheetEntryPage,
   useTimesheetEntryUserRoles,
   useUpdateTimesheetEntry,
 } from "@/hooks/useTimesheetEntries";
@@ -27,6 +26,7 @@ import {
 } from "@/lib/validators/timesheetEntry.validators";
 import {
   canManageAnyTimesheetEntry,
+  DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE,
   ENTRY_HOURS_STEP,
   isProjectScopedTimesheetManager,
   MAX_ENTRY_HOURS,
@@ -102,8 +102,8 @@ function sumHours(entries: TimesheetEntry[]): number {
  * treated as irreversible from this UI (confirmed via `ConfirmDialog`).
  *
  * **Entries data source, split by role**: `SystemAdmin` and a plain `User`
- * are powered by `TimesheetEntry/GetAllTimesheetEntries` (`useTimesheetEntryList`,
- * via `app/api/timesheet-entries/route.ts`) exactly as before. A `ProjectAdmin`
+ * are powered by `TimesheetEntry/GetAllTimesheetEntries` (`useTimesheetEntryPage`,
+ * via `app/api/timesheet-entries/route.ts`). A `ProjectAdmin`
  * (`isProjectScopedManager`) instead uses the backend's dedicated
  * `TimesheetEntry/GetProjectAdminTimesheetSummary` endpoint
  * (`useProjectAdminTimesheetSummary`, via
@@ -114,6 +114,25 @@ function sumHours(entries: TimesheetEntry[]): number {
  * time; both are filtered by the same "Project" select below, and the rest
  * of this component (filtering, pagination, Approve/Reject, Edit) is
  * unaware of which one supplied `entries`.
+ *
+ * **Pagination** (`feature/timesheets-pagination`): both endpoints already
+ * paginate server-side (`TotalCount`/`TotalPages`/`PageNo`/`PageSize`, per
+ * `docs/HR_System_BE.postman_collection.json`) — this screen now sends an
+ * explicit `page`/`pageSize` to whichever one is active and drives the
+ * shared `<TablePagination>` control from the response's own `totalCount`,
+ * rather than fetching everything up front and slicing it client-side via
+ * `hooks/useTablePagination.ts` (this table's result set is a genuinely
+ * large, unbounded work-log history, not a small, fully-loaded reference-data
+ * set — the same reasoning `InvoicesListView` documents for its own
+ * server-side pagination). One consequence: the Date From/Date To filter
+ * below still runs client-side (the backend documents no date-range query
+ * param on either endpoint) and so only ever narrows the *current page's*
+ * entries — switching pages re-applies it to that page's own fetch. The
+ * "Total/Approved/Pending hours" summary cards are likewise computed from
+ * the current page only, not the caller's entire history; this mirrors the
+ * (necessarily approximate) pre-pagination behavior, which was already
+ * silently capped at the backend's own default page size before an explicit
+ * `page`/`pageSize` was ever sent.
  *
  * Per row, the Actions column renders *every* action the signed-in user is
  * entitled to for that entry — ownership and role are independent,
@@ -243,6 +262,10 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [filterError, setFilterError] = useState<string | null>(null);
+  // Server-side pagination (`feature/timesheets-pagination`) — see this
+  // component's doc comment's "Pagination" section. Reset to `1` whenever a
+  // new filter is applied (`handleApplyFilters`), same as `InvoicesListView`.
+  const [page, setPage] = useState(1);
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editHours, setEditHours] = useState("");
@@ -278,21 +301,25 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
   // See this component's doc comment ("Entries data source, split by role").
   // A `ProjectAdmin` uses `useProjectAdminTimesheetSummary`
   // (`GetProjectAdminTimesheetSummary`); `SystemAdmin`/a plain `User` use
-  // `useTimesheetEntryList` (`GetAllTimesheetEntries`) — only one of the two
-  // queries below is ever enabled.
+  // `useTimesheetEntryPage` (`GetAllTimesheetEntries`) — only one of the two
+  // queries below is ever enabled. Both are sent the same `page`/`pageSize`
+  // (see this component's doc comment's "Pagination" section).
   const {
-    data: allEntries,
-    isLoading: isAllEntriesLoading,
-    isError: isAllEntriesError,
-    error: allEntriesError,
-    refetch: refetchAllEntries,
-  } = useTimesheetEntryList(
+    data: entryPage,
+    isLoading: isEntryPageLoading,
+    isError: isEntryPageError,
+    error: entryPageError,
+    isFetching: isEntryPageFetching,
+    refetch: refetchEntryPage,
+  } = useTimesheetEntryPage(
     {
       // Managers review/approve every user's entries here; a plain `User` is
       // always scoped to their own (matching the ownership rules enforced
       // server-side in `app/api/timesheet-entries/route.ts`).
       userId: canApprove ? undefined : currentUserId,
       projectId: appliedFilters.projectId || undefined,
+      page,
+      pageSize: DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE,
     },
     { enabled: !isProjectScopedManager }
   );
@@ -302,19 +329,27 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     isLoading: isProjectAdminSummaryLoading,
     isError: isProjectAdminSummaryError,
     error: projectAdminSummaryError,
+    isFetching: isProjectAdminSummaryFetching,
     refetch: refetchProjectAdminSummary,
   } = useProjectAdminTimesheetSummary(
-    { projectId: appliedFilters.projectId || undefined },
+    { projectId: appliedFilters.projectId || undefined, page, pageSize: DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE },
     { enabled: isProjectScopedManager }
   );
 
-  const entries = isProjectScopedManager ? projectAdminSummary?.entries : allEntries;
-  const isEntriesLoading = isProjectScopedManager ? isProjectAdminSummaryLoading : isAllEntriesLoading;
-  const isEntriesError = isProjectScopedManager ? isProjectAdminSummaryError : isAllEntriesError;
-  const entriesError = isProjectScopedManager ? projectAdminSummaryError : allEntriesError;
+  const entries = isProjectScopedManager ? projectAdminSummary?.entries : entryPage?.items;
+  const isEntriesLoading = isProjectScopedManager ? isProjectAdminSummaryLoading : isEntryPageLoading;
+  const isEntriesError = isProjectScopedManager ? isProjectAdminSummaryError : isEntryPageError;
+  const entriesError = isProjectScopedManager ? projectAdminSummaryError : entryPageError;
+  const isEntriesFetching = isProjectScopedManager ? isProjectAdminSummaryFetching : isEntryPageFetching;
+  // Drives the shared `<TablePagination>` below — see this component's doc
+  // comment's "Pagination" section. Falls back to `1` while the very first
+  // fetch for either branch is still in flight.
+  const totalPages = isProjectScopedManager
+    ? projectAdminSummary?.totalPages ?? 1
+    : entryPage?.totalPages ?? 1;
 
   function refetchEntries() {
-    return isProjectScopedManager ? refetchProjectAdminSummary() : refetchAllEntries();
+    return isProjectScopedManager ? refetchProjectAdminSummary() : refetchEntryPage();
   }
 
   const updateMutation = useUpdateTimesheetEntry();
@@ -428,13 +463,6 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
     [visibleEntries]
   );
 
-  const {
-    page,
-    setPage,
-    totalPages,
-    pageItems: pagedEntries,
-  } = useTablePagination(visibleEntries);
-
   // Defense-in-depth: if the owning period can't be resolved (still loading,
   // or missing from the list for any reason) treat the entry as locked rather
   // than optimistically allowing an action whose lock status we can't
@@ -540,6 +568,9 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
       return;
     }
     setAppliedFilters(draftFilters);
+    // A new filter is a new "logical query" — start back at page 1 of the
+    // server-paginated results, same as `InvoicesListView.handleApplyFilters`.
+    setPage(1);
   }
 
   function startEdit(entry: TimesheetEntry) {
@@ -753,7 +784,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {pagedEntries.map((entry) => {
+                {visibleEntries.map((entry) => {
                   const isEditing = editingEntryId === entry.id;
                   const canEditThisEntry = canEditOwnEntry(entry);
                   const canManageThisEntry = canReviewEntry(entry);
@@ -905,6 +936,7 @@ export function TimesheetHistoryView({ currentUserId }: TimesheetHistoryViewProp
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        isDisabled={isEntriesFetching}
         label="Timesheet entry history pagination"
       />
 

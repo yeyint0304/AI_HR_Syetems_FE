@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Info, Lock } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -78,6 +78,21 @@ function formatPeriodOptionLabel(period: TimesheetPeriod): string {
   return period.isLocked ? `${range} (Locked)` : range;
 }
 
+/**
+ * Descending `periodStart` comparator (most recently started period first).
+ * Must return `0` for equal dates — a comparator that only ever returns `1`
+ * or `-1` violates `Array.prototype.sort`'s contract and produces
+ * engine-dependent, non-deterministic ordering for periods that happen to
+ * share the same `periodStart` (e.g. two periods created for the same
+ * range), which in turn made `resolveDefaultPeriod` below pick an
+ * unpredictable one of the two instead of consistently preferring
+ * whichever came first.
+ */
+function comparePeriodStartDescending(a: TimesheetPeriod, b: TimesheetPeriod): number {
+  if (a.periodStart === b.periodStart) return 0;
+  return a.periodStart < b.periodStart ? 1 : -1;
+}
+
 /** Picks a sensible default period: one covering today, else the most recently started one. */
 function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | null {
   if (periods.length === 0) return null;
@@ -85,7 +100,7 @@ function resolveDefaultPeriod(periods: TimesheetPeriod[]): TimesheetPeriod | nul
   const current = periods.find((period) => isDateOnlyInRange(today, period.periodStart, period.periodEnd));
   if (current) return current;
 
-  return [...periods].sort((a, b) => (a.periodStart < b.periodStart ? 1 : -1))[0];
+  return [...periods].sort(comparePeriodStartDescending)[0];
 }
 
 function resolveDefaultWeekStart(period: TimesheetPeriod): string {
@@ -181,6 +196,16 @@ function resolveDefaultWeekStart(period: TimesheetPeriod): string {
  * every loggable project (`dailyTotals` below), not just the visible page —
  * otherwise "Daily total"/"Total" would silently under-report once a user is
  * assigned to more projects than fit on one page.
+ *
+ * Per the `feature/timesheets-pagination` QA follow-up (stale-success-banner
+ * regression): `handleSaveAll` no longer shows/preserves its "Timesheet
+ * saved successfully" (or error) banner if the signed-in user switched to a
+ * *different* timesheet period while that save was still in flight — see
+ * `selectedPeriodIdRef`/`targetPeriodId` in `handleSaveAll` below. Also fixed
+ * the underlying `sortedPeriods`/`resolveDefaultPeriod` sort comparator
+ * (`comparePeriodStartDescending`), which previously never returned `0` for
+ * two periods sharing the same `periodStart` and so sorted them in a
+ * non-deterministic order depending on the JS engine's sort implementation.
  */
 export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   const { user } = useAuth();
@@ -225,10 +250,26 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
   // rather than a ref, since this codebase's lint rules forbid reading/writing
   // refs during render.
   const [preserveSaveMessage, setPreserveSaveMessage] = useState(false);
+  // Always holds the *latest* `selectedPeriodId`, kept in sync via the effect
+  // below rather than read directly off the `selectedPeriodId` state variable
+  // inside `handleSaveAll` — that function is an async closure created at
+  // click-time, so its own `selectedPeriod`/`selectedPeriodId` reference stays
+  // frozen at whichever period was selected *when Save All was clicked*, even
+  // if the user switches periods again before the in-flight save resolves.
+  // `handleSaveAll` compares this ref against the period it started saving
+  // against (`targetPeriodId`) right before showing the save banner, so a
+  // save that resolves after the user has already navigated to a different
+  // period no longer leaks its "Timesheet saved successfully" / error message
+  // into that other period's view (regression fix for the stale-banner bug
+  // described in the `MyTimesheetView` test suite).
+  const selectedPeriodIdRef = useRef(selectedPeriodId);
+  useEffect(() => {
+    selectedPeriodIdRef.current = selectedPeriodId;
+  }, [selectedPeriodId]);
 
   const sortedPeriods = useMemo(() => {
     if (!periods) return [];
-    return [...periods].sort((a, b) => (a.periodStart < b.periodStart ? 1 : -1));
+    return [...periods].sort(comparePeriodStartDescending);
   }, [periods]);
 
   const activeProjects = useMemo(() => (projects ?? []).filter((project) => project.isActive), [projects]);
@@ -441,6 +482,11 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
 
   async function handleSaveAll() {
     if (!selectedPeriod) return;
+    // Captured now, at click-time — compared against `selectedPeriodIdRef`
+    // once every operation below has settled, so a period switch made while
+    // this save is still in flight can suppress the (now stale) banner
+    // instead of leaking it into the newly-selected period's view.
+    const targetPeriodId = selectedPeriod.id;
     setSaveError(null);
     setSaveSuccess(null);
 
@@ -532,6 +578,16 @@ export function MyTimesheetView({ currentUserId }: MyTimesheetViewProps) {
         }
       }
     }
+
+    // The user may have switched to a different period while the operations
+    // above were still in flight (nothing but the Save button itself is
+    // disabled during `isSaving` — the period `<select>` is not). If so, this
+    // save's own success/error banner is no longer relevant to what's on
+    // screen — bail out without touching `preserveSaveMessage` or the
+    // banner state, so the resync already in progress for the newly-selected
+    // period clears any leftover message instead of this stale one
+    // overwriting it.
+    if (selectedPeriodIdRef.current !== targetPeriodId) return;
 
     // Every successful create/update/delete above just triggered an
     // `invalidateQueries(["timesheet-entries"])` (see `useTimesheetEntries.ts`),

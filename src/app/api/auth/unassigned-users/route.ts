@@ -6,7 +6,7 @@ import { normalizeBackendError } from "@/lib/server/normalizeBackendError";
 import { mapBackendUnassignedUserPage } from "@/lib/server/authResponseMappers";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
 import { canManageProjects } from "@/lib/constants/project.constants";
-import { UNASSIGNED_USERS_PAGE_SIZE, USER_ROLES } from "@/lib/constants/auth.constants";
+import { UNASSIGNED_USERS_PAGE_SIZE } from "@/lib/constants/auth.constants";
 import { unassignedUserQuerySchema } from "@/lib/validators/auth.validators";
 import type { UnassignedUser } from "@/types/auth.types";
 
@@ -21,11 +21,11 @@ import type { UnassignedUser } from "@/types/auth.types";
  * `/api/v1/Auth/SearchUsers` instead of the unassign user endpoint"), this
  * previously called `Auth/GetUserList` (the collection's own folder name for
  * that call is "Get Unassigned User List", but its *path* is `GetUserList`)
- * — it now calls `Auth/SearchUsers` instead, with `isAllRole` derived from
- * the caller's own role: a `ProjectAdmin` only searches assignable
- * (non-all-role) users (`isAllRole=false`), while a `SystemAdmin` searches
- * across every role (`isAllRole=true`), matching the Postman collection's
- * saved example request for this endpoint.
+ * — it now calls `Auth/SearchUsers` instead, always with `isAllRole=false`
+ * regardless of the caller's own role (`SystemAdmin` or `ProjectAdmin`), so
+ * the "Add User to Project" combobox only ever offers assignable
+ * (non-all-role) users to assign — a `SystemAdmin`/`ProjectAdmin` account
+ * itself should never show up as an assignable project resource.
  *
  * Note: neither `GetUserList` nor `SearchUsers` documents a per-project
  * parameter — both return users backend-wide, not scoped to "not yet
@@ -91,11 +91,11 @@ export async function GET(request: Request) {
   const pageSize = parsedQuery.data.pageSize ?? UNASSIGNED_USERS_PAGE_SIZE;
   const search = parsedQuery.data.search;
 
-  // `isAllRole` per the `feature/user-deactivate` request: a `ProjectAdmin`
-  // only searches assignable (non-all-role) users, while a `SystemAdmin`
-  // searches across every role — matching the Postman collection's saved
-  // `Auth/SearchUsers` example (`isAllRole=true`).
-  const isAllRole = currentUser.role === USER_ROLES.SYSTEM_ADMIN;
+  // `isAllRole=false` for every caller (`SystemAdmin` and `ProjectAdmin`
+  // alike) per `feature/timesheets-pagination` — the "Add User to Project"
+  // combobox should only ever offer assignable (non-all-role) users, never
+  // admin accounts, regardless of who is doing the assigning.
+  const isAllRole = false;
   // An email-shaped term is forwarded as `email`; anything else as `userName`
   // — `Auth/SearchUsers` documents both as separate, independent filters (see
   // this route's doc comment), so only one is ever sent for a given search.

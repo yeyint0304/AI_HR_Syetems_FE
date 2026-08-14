@@ -9,16 +9,25 @@ import {
 } from "@/lib/server/timesheetEntryResponseMappers";
 import { projectAdminTimesheetSummaryQuerySchema } from "@/lib/validators/timesheetEntry.validators";
 import { decodeJwt, mapClaimsToAuthUser } from "@/lib/utils/jwt";
-import { isProjectScopedTimesheetManager } from "@/lib/constants/timesheetEntry.constants";
+import {
+  DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE,
+  isProjectScopedTimesheetManager,
+} from "@/lib/constants/timesheetEntry.constants";
 import type { ProjectAdminTimesheetSummary } from "@/types/timesheetEntry.types";
 
-const EMPTY_SUMMARY: ProjectAdminTimesheetSummary = {
-  totalHours: 0,
-  approvedHours: 0,
-  pendingHours: 0,
-  projectSummaries: [],
-  entries: [],
-};
+function buildEmptySummary(page: number, pageSize: number): ProjectAdminTimesheetSummary {
+  return {
+    totalHours: 0,
+    approvedHours: 0,
+    pendingHours: 0,
+    projectSummaries: [],
+    entries: [],
+    totalCount: 0,
+    page,
+    pageSize,
+    totalPages: 1,
+  };
+}
 
 /**
  * GET /api/timesheet-entries/project-admin-summary
@@ -43,6 +52,15 @@ const EMPTY_SUMMARY: ProjectAdminTimesheetSummary = {
  * is expected to scope the summary to every project this `ProjectAdmin`
  * manages, matching the "All Projects" option already offered by this
  * screen's existing Project filter.
+ *
+ * `page`/`pageSize`, per `feature/timesheets-pagination`: this endpoint's own
+ * `Items`/`TotalCount`/`TotalPages`/`PageNo`/`PageSize` fields (see
+ * `lib/server/timesheetEntryResponseMappers.ts#mapBackendProjectAdminTimesheetSummary`)
+ * show it paginates its entry list exactly like `GetAllTimesheetEntries`
+ * does, so `page`/`pageSize` are forwarded the same "optimistic" way (neither
+ * is documented on the request side, but the response envelope already
+ * reflects them) so a `ProjectAdmin`'s "Timesheet History" table can page
+ * through more than the first `PageSize` entries too.
  */
 export async function GET(request: Request) {
   const accessToken = await getAccessToken();
@@ -72,6 +90,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const parsedQuery = projectAdminTimesheetSummaryQuerySchema.safeParse({
     projectId: searchParams.get("projectId") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsedQuery.success) {
@@ -81,11 +101,14 @@ export async function GET(request: Request) {
     );
   }
 
+  const page = parsedQuery.data.page ?? 1;
+  const pageSize = parsedQuery.data.pageSize ?? DEFAULT_TIMESHEET_HISTORY_PAGE_SIZE;
+
   try {
     const response = await backendApiClient.get(
       "/TimesheetEntry/GetProjectAdminTimesheetSummary",
       {
-        params: { projectId: parsedQuery.data.projectId },
+        params: { projectId: parsedQuery.data.projectId, page, pageSize },
         headers: { Authorization: `Bearer ${accessToken}` },
       }
     );
@@ -100,8 +123,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ message }, { status });
     }
 
-    const summary = mapBackendProjectAdminTimesheetSummary(envelope.data);
-    return NextResponse.json({ data: summary ?? EMPTY_SUMMARY }, { status: 200 });
+    const summary = mapBackendProjectAdminTimesheetSummary(envelope.data, page, pageSize);
+    return NextResponse.json({ data: summary ?? buildEmptySummary(page, pageSize) }, { status: 200 });
   } catch (error) {
     const { status, message } = normalizeBackendError(
       error,
