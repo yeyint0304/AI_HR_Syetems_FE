@@ -39,6 +39,17 @@ const optionalDateOnlyField = (label: string) =>
  * fields the wireframe omits. `TaxRate` has no counterpart on the real
  * request body (tax is computed server-side), so it is intentionally not
  * modeled here.
+ *
+ * Field-requiredness is a deliberate product decision for this screen: the
+ * backend's `Invoice/GenerateInvoice` documents `ClientEmail`/`IssuedDate`/
+ * `DueDate`/`Notes` as all optional, but this app tightens that client- (and
+ * Route Handler-)side to only `Notes` and `ClientEmail` staying optional —
+ * `Project`, `Billing period from`/`to`, `Invoice currency`, `Client name`,
+ * `Issued date`, and `Due date` are all required here, since a Draft invoice
+ * without an issue/due date is not useful to send to a client. The backend
+ * itself is unaffected and still accepts (and independently re-validates)
+ * requests omitting `IssuedDate`/`DueDate`, so this is strictly a stricter
+ * UI-level gate, not a backend contract change.
  */
 export const generateInvoiceSchema = z
   .object({
@@ -48,15 +59,15 @@ export const generateInvoiceSchema = z
     currencyId: z.string().min(1, "Select an invoice currency."),
     clientName: z.string().trim().min(1, "Client name is required.").max(150, "Client name is too long."),
     clientEmail: z.email("Enter a valid client email address.").optional().or(z.literal("")),
-    issuedDate: optionalDateOnlyField("Issued date"),
-    dueDate: optionalDateOnlyField("Due date"),
+    issuedDate: dateOnlyField("Issued date"),
+    dueDate: dateOnlyField("Due date"),
     notes: z.string().trim().max(1000, "Notes are too long.").optional().or(z.literal("")),
   })
   .refine((data) => data.billingPeriodEnd >= data.billingPeriodStart, {
     message: "Billing period end must be on or after the billing period start.",
     path: ["billingPeriodEnd"],
   })
-  .refine((data) => !data.issuedDate || !data.dueDate || data.dueDate >= data.issuedDate, {
+  .refine((data) => data.dueDate >= data.issuedDate, {
     message: "Due date must be on or after the issued date.",
     path: ["dueDate"],
   });

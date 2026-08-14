@@ -54,6 +54,8 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/billing period from/i), { target: { value: "2025-01-01" } });
   fireEvent.change(screen.getByLabelText(/billing period to/i), { target: { value: "2025-01-31" } });
   await user.type(screen.getByLabelText(/client name/i), "Acme Corp");
+  fireEvent.change(screen.getByLabelText(/^issued date$/i), { target: { value: "2025-02-01" } });
+  fireEvent.change(screen.getByLabelText(/^due date$/i), { target: { value: "2025-02-15" } });
 }
 
 describe("InvoiceGenerateForm", () => {
@@ -101,7 +103,10 @@ describe("InvoiceGenerateForm", () => {
     await user.click(screen.getByRole("button", { name: /generate invoice/i }));
 
     const alerts = await screen.findAllByRole("alert");
-    expect(alerts.map((el) => el.textContent)).toContain("Select a project.");
+    const alertMessages = alerts.map((el) => el.textContent);
+    expect(alertMessages).toContain("Select a project.");
+    expect(alertMessages).toContain("Issued date is required.");
+    expect(alertMessages).toContain("Due date is required.");
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
@@ -152,6 +157,8 @@ describe("InvoiceGenerateForm", () => {
           billingPeriodStart: "2025-01-01",
           billingPeriodEnd: "2025-01-31",
           clientName: "Acme Corp",
+          issuedDate: "2025-02-01",
+          dueDate: "2025-02-15",
         })
       )
     );
@@ -166,15 +173,56 @@ describe("InvoiceGenerateForm", () => {
     const user = userEvent.setup();
     renderWithClient(<InvoiceGenerateForm />);
 
+    // "Client email" and "Notes" are the only optional fields on this form —
+    // see `generateInvoiceSchema`'s doc comment.
     await fillRequiredFields(user);
     await user.click(screen.getByRole("button", { name: /generate invoice/i }));
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
     const [, payload] = (apiClient.post as jest.Mock).mock.calls[0];
     expect(payload.clientEmail).toBeUndefined();
-    expect(payload.issuedDate).toBeUndefined();
-    expect(payload.dueDate).toBeUndefined();
     expect(payload.notes).toBeUndefined();
+  });
+
+  it("rejects submission when Issued date is missing", async () => {
+    mockGetResponses();
+    const user = userEvent.setup();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/^issued date$/i), { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: /generate invoice/i }));
+
+    expect(await screen.findByText(/issued date is required/i)).toBeInTheDocument();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("rejects submission when Due date is missing", async () => {
+    mockGetResponses();
+    const user = userEvent.setup();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/^due date$/i), { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: /generate invoice/i }));
+
+    expect(await screen.findByText(/due date is required/i)).toBeInTheDocument();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("rejects a due date before the issued date", async () => {
+    mockGetResponses();
+    const user = userEvent.setup();
+    renderWithClient(<InvoiceGenerateForm />);
+
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/^due date$/i), { target: { value: "2025-01-01" } });
+    await user.click(screen.getByRole("button", { name: /generate invoice/i }));
+
+    expect(
+      await screen.findByText(/due date must be on or after the issued date/i)
+    ).toBeInTheDocument();
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("shows the backend error message when generation fails", async () => {

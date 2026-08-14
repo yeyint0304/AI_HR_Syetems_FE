@@ -22,13 +22,15 @@ describe("invoice.validators", () => {
       expect(generateInvoiceSchema.safeParse(validPayload).success).toBe(true);
     });
 
-    it("accepts a payload with only the required fields", () => {
+    it("accepts a payload with only the required fields (Client email and Notes omitted)", () => {
       const result = generateInvoiceSchema.safeParse({
         projectId: validPayload.projectId,
         billingPeriodStart: validPayload.billingPeriodStart,
         billingPeriodEnd: validPayload.billingPeriodEnd,
         currencyId: validPayload.currencyId,
         clientName: validPayload.clientName,
+        issuedDate: validPayload.issuedDate,
+        dueDate: validPayload.dueDate,
       });
       expect(result.success).toBe(true);
     });
@@ -40,6 +42,16 @@ describe("invoice.validators", () => {
 
     it("rejects a missing client name", () => {
       const result = generateInvoiceSchema.safeParse({ ...validPayload, clientName: "" });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a missing issued date", () => {
+      const result = generateInvoiceSchema.safeParse({ ...validPayload, issuedDate: "" });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a missing due date", () => {
+      const result = generateInvoiceSchema.safeParse({ ...validPayload, dueDate: "" });
       expect(result.success).toBe(false);
     });
 

@@ -56,6 +56,14 @@ function readDateOnlyParam(value: string | null): string {
  *   directly creates the Draft invoice from approved timesheet entries), so
  *   this is a single-step form that submits straight to `Invoice/GenerateInvoice`.
  *
+ * Required vs. optional fields (`generateInvoiceSchema`): `Project`,
+ * `Billing period from`/`to`, `Invoice currency`, `Client name`, `Issued
+ * date`, and `Due date` are all required to generate an invoice — only
+ * `Client email` and `Notes` are optional. `Issued date`/`Due date` are
+ * stricter here than the backend itself documents (it accepts either
+ * omitted), a deliberate product decision so a generated Draft invoice always
+ * has the dates it needs to be sent to a client without a follow-up edit.
+ *
  * Per the `bugs/timesheet-history` feature request ("fix the create invoice
  * that showing 400 ... No approved timesheet entries found in the specified
  * billing period"): that message is a real, correctly-surfaced backend
@@ -288,13 +296,13 @@ export function InvoiceGenerateForm() {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <TextField
-          label="Issued date (optional)"
+          label="Issued date"
           type="date"
           error={errors.issuedDate?.message}
           {...register("issuedDate")}
         />
         <TextField
-          label="Due date (optional)"
+          label="Due date"
           type="date"
           error={errors.dueDate?.message}
           {...register("dueDate")}
